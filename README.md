@@ -130,6 +130,12 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
+Every binary declares the generic family tier: no `solver_id` and no generated
+or accepted problem family, because none links a canonical family generator.
+`tests/family_capabilities.rs` checks that `--capabilities` and the session
+agree. [Research port map](docs/research-port-map.md) lists how the research
+fork of this crate differs from production and which code this crate keeps.
+
 ## Running
 
 **Connect to a coordinator** (production):
