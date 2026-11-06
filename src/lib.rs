@@ -12,6 +12,7 @@
 
 pub mod bench;
 mod coloring;
+pub mod families;
 pub mod flatiron;
 pub mod flatiron_sampler;
 pub mod gibbs_parallel;
