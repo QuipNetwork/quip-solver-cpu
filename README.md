@@ -136,6 +136,12 @@ or accepted problem family, because none links a canonical family generator.
 agree. [Research port map](docs/research-port-map.md) lists how the research
 fork of this crate differs from production and which code this crate keeps.
 
+`families::otsuka` is the Otsuka cluster kernel for gauged-ice instances with
+tile and pair motifs, ported from the research `fast_bench.rs`. It refuses
+fields and supports soft pair and tile weights. No binary runs it yet.
+`tests/otsuka_kernel.rs` checks it against exact energies and the exact
+Boltzmann distribution of small fixtures.
+
 ## Running
 
 **Connect to a coordinator** (production):
