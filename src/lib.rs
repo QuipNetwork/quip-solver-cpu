@@ -682,6 +682,7 @@ mod tests {
             CPU_MPS_IDENTITY,
             CPU_MFA_IDENTITY,
             CPU_FLATIRON_IDENTITY,
+            CPU_OTSUKA_IDENTITY,
         ];
         let sb = [
             CPU_SB_IDENTITY,
