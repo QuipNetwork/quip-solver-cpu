@@ -2,3 +2,4 @@
 //! the family's motif metadata.
 
 pub mod otsuka;
+pub mod otsuka_sampler;

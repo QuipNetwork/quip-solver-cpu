@@ -31,6 +31,7 @@ pub mod sb_sbqa;
 pub mod sb_tesb;
 mod spin_barrier;
 
+pub use families::otsuka_sampler::{OtsukaSampler, CPU_OTSUKA_IDENTITY, OTSUKA_SOLVER_ID};
 pub use flatiron::{sample_ising_flatiron, FlatironConfig};
 pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
 pub use gibbs_parallel::{ConfigError, GibbsConfig, GibbsParallelism};
@@ -173,7 +174,7 @@ pub(crate) enum StreamKernelError {
 fn run_stream_pump<K, F>(
     width: F,
     kernel: K,
-    mut jobs: tokio::sync::mpsc::Receiver<StreamJob>,
+    jobs: tokio::sync::mpsc::Receiver<StreamJob>,
     out: tokio::sync::mpsc::Sender<StreamResult>,
     cancel: CancelToken,
 ) where
@@ -189,11 +190,62 @@ fn run_stream_pump<K, F>(
         + Clone
         + 'static,
 {
+    run_job_pump(
+        width,
+        move |j: &StreamJob, token: &CancelToken| kernel(&j.graph, &j.params, token, j.watermark),
+        jobs,
+        out,
+        cancel,
+    );
+}
+
+/// A job the stream pump can hand to a worker: its cancel watermark and its id.
+pub(crate) trait PumpJob: Send + 'static {
+    fn watermark(&self) -> Option<u64>;
+    fn into_job_id(self) -> Vec<u8>;
+}
+
+impl PumpJob for StreamJob {
+    fn watermark(&self) -> Option<u64> {
+        self.watermark
+    }
+
+    fn into_job_id(self) -> Vec<u8> {
+        self.job_id
+    }
+}
+
+impl PumpJob for quip_solver_core::WarmStreamJob {
+    fn watermark(&self) -> Option<u64> {
+        self.job.watermark
+    }
+
+    fn into_job_id(self) -> Vec<u8> {
+        self.job.job_id
+    }
+}
+
+/// [`run_stream_pump`] over any [`PumpJob`]: the kernel receives the whole job.
+pub(crate) fn run_job_pump<J, K, F>(
+    width: F,
+    kernel: K,
+    mut jobs: tokio::sync::mpsc::Receiver<J>,
+    out: tokio::sync::mpsc::Sender<StreamResult>,
+    cancel: CancelToken,
+) where
+    J: PumpJob,
+    F: FnOnce() -> usize,
+    K: Fn(&J, &CancelToken) -> Result<Vec<SamplerResult>, StreamKernelError>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+{
     let Some(first) = jobs.blocking_recv() else {
         return;
     };
     let width = width().max(1);
-    let (work_tx, work_rx) = crossbeam_channel::bounded::<StreamJob>(width);
+    let (work_tx, work_rx) = crossbeam_channel::bounded::<J>(width);
     let workers: Vec<_> = (0..width)
         .map(|_| {
             let work_rx = work_rx.clone();
@@ -203,7 +255,7 @@ fn run_stream_pump<K, F>(
             std::thread::spawn(move || {
                 for j in work_rx.iter() {
                     let t0 = std::time::Instant::now();
-                    let step = kernel(&j.graph, &j.params, &cancel, j.watermark);
+                    let step = kernel(&j, &cancel);
                     let device_access_time_us = t0.elapsed().as_micros() as u64;
                     let outcome = match step {
                         Err(StreamKernelError::Cancelled) => StreamOutcome::Cancelled,
@@ -213,7 +265,7 @@ fn run_stream_pump<K, F>(
                         // token — must suppress the completion, or a reseed
                         // can score a stale generation.
                         Ok(samples) => {
-                            if cancel.is_cancelled(j.watermark) {
+                            if cancel.is_cancelled(j.watermark()) {
                                 StreamOutcome::Cancelled
                             } else {
                                 StreamOutcome::Completed(Ok(samples))
@@ -224,7 +276,7 @@ fn run_stream_pump<K, F>(
                             // the error is session-fatal (upstream keeps a
                             // `DeviceFault` visible through a cancel).
                             let fatal = e.is_fatal();
-                            if cancel.is_cancelled(j.watermark) && !fatal {
+                            if cancel.is_cancelled(j.watermark()) && !fatal {
                                 StreamOutcome::Cancelled
                             } else {
                                 StreamOutcome::Completed(Err(e))
@@ -233,7 +285,7 @@ fn run_stream_pump<K, F>(
                     };
                     if out
                         .blocking_send(StreamResult {
-                            job_id: j.job_id,
+                            job_id: j.into_job_id(),
                             outcome,
                             device_access_time_us,
                         })
@@ -259,10 +311,10 @@ fn run_stream_pump<K, F>(
         // Abandoned generations are dropped here, before a worker ever
         // touches the graph: a reseed can leave the queue full of stale
         // nonces, and sampling one would waste the round for nothing.
-        if cancel.is_cancelled(j.watermark) {
+        if cancel.is_cancelled(j.watermark()) {
             if out
                 .blocking_send(StreamResult {
-                    job_id: j.job_id,
+                    job_id: j.into_job_id(),
                     outcome: StreamOutcome::Cancelled,
                     device_access_time_us: 0,
                 })
@@ -630,6 +682,7 @@ mod tests {
             CPU_MPS_IDENTITY,
             CPU_MFA_IDENTITY,
             CPU_FLATIRON_IDENTITY,
+            CPU_OTSUKA_IDENTITY,
         ];
         let sb = [
             CPU_SB_IDENTITY,

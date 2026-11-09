@@ -112,6 +112,11 @@ name = "quip-cpu-flatiron"
 path = "src/bin/quip_cpu_flatiron.rs"
 required-features = ["experimental"]
 
+[[bin]]
+name = "quip-cpu-otsuka"
+path = "src/bin/quip_cpu_otsuka.rs"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes
@@ -156,9 +161,9 @@ mem-forget            = "deny"
 
 # The Quip solver contract, published from crates.io (quip.network/quip-solver-core).
 [dependencies]
-quip-proto = "0.0.5"
-quip-protocol = "0.0.5"
-quip-solver-core = "0.0.5"
+quip-proto = "0.0.6"
+quip-protocol = "0.0.6"
+quip-solver-core = "0.0.6"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync"] }
@@ -172,5 +177,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 proptest = "1.11.0"
-quip-solver-conformance = "0.0.5"
+quip-solver-conformance = "0.0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync", "process"] }
