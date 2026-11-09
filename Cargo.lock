@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -594,11 +600,12 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "ising-generators"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcb6043563e84b577d7a7562a313f13075337d2419706a0ed380ae9b3b11fd05"
+checksum = "c1c7676d9de186dc2e345fc12e38b1af805e8a8fd9599fba7063de1fac799d07"
 dependencies = [
  "blake3",
+ "miniz_oxide",
 ]
 
 [[package]]
@@ -666,6 +673,15 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
+]
 
 [[package]]
 name = "mio"
@@ -808,9 +824,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quip-proto"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ff0b04ded49f49ada8e21a87fa0d58d5e180b8c3ac9f74a6f721e171488556"
+checksum = "e88ec7e421d6fe7da3b82c97e0ca49098bb6c884802e6b1f36d4a2139195357a"
 dependencies = [
  "prost",
  "tonic",
@@ -818,9 +834,9 @@ dependencies = [
 
 [[package]]
 name = "quip-protocol"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fc54ac969c76e194b05b2e108289317868c2ed63a4b67e9c9b242258a039c39"
+checksum = "9a6d145cb85307bd94fd001876f6900bb1c22b18aa9f8e7246e6138fdc3dbd97"
 dependencies = [
  "ising-generators",
  "quip-proto",
@@ -828,9 +844,9 @@ dependencies = [
 
 [[package]]
 name = "quip-solver-conformance"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "549a8b878c8cb533b7d49114d1743e8d9e5ed8c3593048d2d13887829b809502"
+checksum = "efab4a47451c3a88bb183dae6b684530c13b7b8ec561ba11d5fda783ed8e5bc8"
 dependencies = [
  "hyper-util",
  "ising-generators",
@@ -847,9 +863,9 @@ dependencies = [
 
 [[package]]
 name = "quip-solver-core"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "240fcd83c3819ff6defbf49d3bbf68e3965b085df3f6afe9ef0342398e0947b2"
+checksum = "c0c88de884d9ba9db4aaf38fb3ae2cc138932cb3e34ec6cf4b457148854cf21d"
 dependencies = [
  "base64",
  "clap",
