@@ -30,13 +30,14 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-mps` | tensor network: imaginary-time TEBD with exact sampling | experimental |
 | `quip-cpu-mfa` | mean-field annealing (the same kernel at bond dimension 1) | experimental |
 | `quip-cpu-flatiron` | belief-propagation tensor network on the problem graph | experimental |
+| `quip-cpu-otsuka` | Otsuka cluster annealing on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
 See [SA acceleration](docs/sa-acceleration.md) for the kernel and benchmark details.
 
-Every sampler streams jobs through one shared pump, `run_stream_pump` in
-`src/lib.rs`. That pump drops a cancelled generation before a worker touches
+Every sampler streams jobs through one shared pump, `run_job_pump` in
+`src/lib.rs`, which `run_stream_pump` wraps for plain jobs. That pump drops a cancelled generation before a worker touches
 the graph. The SA kernel also polls the cancel guard once per sweep (one
 `Relaxed` load, never per spin flip). A long in-flight job of 80 to 300
 seconds then stops at the next sweep. The kernel emits
@@ -130,17 +131,29 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary declares the generic family tier: no `solver_id` and no generated
-or accepted problem family, because none links a canonical family generator.
-`tests/family_capabilities.rs` checks that `--capabilities` and the session
-agree. [Research port map](docs/research-port-map.md) lists how the research
+Every binary except `quip-cpu-otsuka` declares the generic family tier: no
+`solver_id` and no generated or accepted problem family, because none links a
+canonical family generator. `tests/family_capabilities.rs` checks that
+`--capabilities` and the session agree.
+
+`quip-cpu-otsuka` generates and accepts `quip/twisted-ice-dimer` revision 1.
+`tests/family_conformance.rs` tests its declaration. [Research port map](docs/research-port-map.md) lists how the research
 fork of this crate differs from production and which code this crate keeps.
 
 `families::otsuka` is the Otsuka cluster kernel for gauged-ice instances with
 tile and pair motifs, ported from the research `fast_bench.rs`. It refuses
-fields and supports soft pair and tile weights. No binary runs it yet.
-`tests/otsuka_kernel.rs` checks it against exact energies and the exact
-Boltzmann distribution of small fixtures.
+fields and supports soft pair and tile weights. `tests/otsuka_kernel.rs`
+checks it against exact energies and the exact Boltzmann distribution of small
+fixtures.
+
+`quip-cpu-otsuka` runs that kernel behind the solver session. Its `solver_id`
+is `quip-cpu-otsuka/1`, and it generates and accepts `quip/twisted-ice-dimer`
+revision 1. The session validates each family instance before the sampler sees
+it. The kernel then reads the tiles, gauges, and pairs from the instance and
+anneals with the job's beta ladder, one cluster sweep per sweep. Every other
+job, and every family job that does not fit the kernel, runs on the SA kernel.
+`tests/family_conformance.rs` runs the family gate and the plain-job
+conformance against the binary.
 
 ## Running
 
