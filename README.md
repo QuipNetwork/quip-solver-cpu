@@ -36,6 +36,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
+| `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -136,7 +137,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, and `quip-cpu-flow` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, and `quip-cpu-tileworm` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -349,6 +350,58 @@ synthetic requests of both modes against enumeration. Some of those requests
 have no solution. It checks that adapted-P constructions hold every declared charge
 on the reference and recipe instances. `tests/flow_conformance.rs` runs the
 family gate.
+
+
+`quip-cpu-tileworm` is a postprocess for the selected charged-ice and
+field-ice cells. Its `solver_id` is `quip-cpu-tileworm/1` and its algorithm is
+`tile-worm`. It advertises `initial-spins` and accepts two families. A
+`quip/charged-ice` revision 1 job with the recipe `ice-charge` runs the policy
+`ice-tiles-charge/1`, with the research options
+`anneal:sa=1,b0=2,len=64,fe=16,nat48=1`. A `quip/ice-fields` revision 1 job
+with the recipe `h500` or `h1000` runs the policy `ice-tiles-field/1`, with
+the options `anneal:b0=2,nat48=1`. The binary generates no family work. Every
+other job runs the `greedy-nat/1` descent.
+
+`postprocess::tile_worm` ports `worm_run` of `icetiles.c`, the tile tables of
+`icetiles.py`, and `parse` and `run` of `method.py`. Each tile holds four
+spins and an energy table. A worm flips a seed spin, then repairs each tile
+that the flip left in an excited state, one corner at a time, until every
+touched tile is back in a ground state. The sampler keeps the worm when its exact energy
+change is negative, or when a Metropolis draw accepts it. Every 16 worms the spins that are in no tile get
+one sweep, and `sa=1` makes that sweep visit every spin. The schedule descends
+all supplied states first and starts from the lowest. It spends 80 percent of
+the budget on the anneal, from `b0 ln 2 / (2 w)` to `ln 1000 / (2 w)` where `w`
+is the weakest nonzero coefficient. It then runs a zero-temperature tail and
+a final descent.
+
+The declared budget is 0.25 s per job. The binary measures elapsed time on the
+thread that runs the job. The research measured process CPU time on one core.
+The kernel reads the clock once for every 64 worms, so the clock sets the
+number of worms and the inverse temperature of each block. Two hosts may give
+different results for one timed job. The result lists the final state first
+and then the descended state of each supplied read, in input order. The
+sampler rescores every state from the job graph. Before it touches a state, it
+checks the tile metadata and the coefficients against the instance. The sampler
+declines a selected job that fails a check. The worm draws its random numbers
+from the job seed. The log line of each job records the policy and the declared budget next to the
+measured time and the work done.
+
+`tests/postprocess_tiles.rs` checks the option strings, the tile tables, the
+seed sets, the schedule ends, and fixed-work runs of ten option strings against
+vectors from the research code in `tests/fixtures/tile_worm_vectors.json`.
+`research/tileworm_parity/export.py vectors` writes that file. It compiles a
+private copy of `icetiles.c` whose clock returns the block index, so a run does
+a known number of blocks. The ignored test `research_parity` replays the saved
+research runs of the three selected cells. The saved runs do not record the
+clock readings, so a replay cannot match a saved state bit for bit. The test
+checks the tile counts, the work count, and that the replay energy stays within
+0.1 percent of the saved energy:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/tileworm_parity/export.py research OUT
+QUIP_TILEWORM_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_tiles -- --ignored research_parity
+```
 
 ## Running
 
