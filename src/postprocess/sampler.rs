@@ -426,7 +426,11 @@ mod tests {
         )
         .ok()
         .expect("a read");
-        assert_eq!(reads[0].spins, vec![-1, -1, -1], "node 0 flips first, then node 2");
+        assert_eq!(
+            reads[0].spins,
+            vec![-1, -1, -1],
+            "node 0 flips first, then node 2"
+        );
         assert_eq!(
             reads[0].energy_milli,
             quip_protocol::scoring::energy_milli(&reads[0].spins, &graph.h, &graph.j, &graph.edges)
