@@ -39,6 +39,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
+| `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job declined | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -139,7 +140,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, and `quip-cpu-routing` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, and `quip-cpu-flow-loops` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -491,6 +492,71 @@ QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/routing_parity/export.py
 QUIP_ROUTING_PARITY=OUT cargo test --release --features experimental \
     --test routing_solver -- --ignored research_parity
 ```
+
+`quip-cpu-flow-loops` is a local search for the same two families. Its
+`solver_id` is `quip-cpu-flow-loops/1` and its algorithm is `flow-loops`. It
+generates and accepts `quip/flow-static` revision 1 and
+`quip/polariton-static` revision 1, with every parameter set. Both build an
+open square-link lattice, which is the only geometry the search reads. The
+binary also accepts initial states, so it can postprocess reads.
+
+The search changes the orientation only by moves that keep the labels. The
+reversal of a directed cycle keeps every charge. The reversal of a directed
+path moves charge from its last vertex to its first. The search has these
+moves:
+
+- A short cycle is one square of the lattice, or two parallel links.
+- A worm walk reverses one link and then follows the arrows out of the vertex
+  that is now short. At each step it takes the cheapest arrow. It stops when
+  the gap closes or when it reaches the free boundary of adapted P. A walk of
+  more than 64 links is undone.
+- A repair reverses the shortest directed path from a pin that is short to a
+  pin with an excess, or to the free boundary.
+
+Before the search keeps a move, it checks each vertex that the move touches.
+No labeled vertex can move further from its label. The charge that the free
+boundary gains must equal the charge that the labeled vertices lose. After
+each kept move, the search checks the whole orientation directly. It compares
+the label gaps and the cost with its running values. It also compares each
+charge. A difference is an error.
+
+The policy is `flow-loops-nat/1`. It has the structure of `nat_loop` in the
+research `descent.py`. Each read first runs the repairs and a steepest descent
+over the short cycles. Then rounds of worm descent, repair, and steepest
+descent follow, until a round does not change the score. A read runs at most
+10 rounds. The worm descent follows `loop_descent` in the research
+`greedy.c`. It visits every link in a random order. It keeps a walk that
+lowers the score. It also keeps a walk that does not change the score, while
+a budget of 4 links per link lasts. The score is the sum of the squared label
+gaps, then the cost. That order is the order of the instance energy.
+
+When a job carries initial states, the search starts from each of them.
+Without them, each read starts from the exact baseline of `quip-cpu-flow`, and
+the job seed drives the search. Each job returns one state per start, in start
+order. Result `k` comes from start `k`. The sampler rescores each result
+from the job graph.
+
+The search runs against a declared budget of 0.25 s of host time per job.
+That is the postprocess allowance of the paired A cells of plan 2: 0.25 CPU
+seconds per QPU call for `ice-charge`, `ice-fields-h500`, and
+`ice-fields-h1000`. The job log records the declared budget beside the
+measured time, with one record per read. The budget is a limit, and a read
+that converges stops early. Read `k` of `n` has until `(k + 1) / n` of the
+budget. If the budget runs out first, a later read keeps its start as its
+result. The time limit makes the result depend on the host.
+Only a fixed-work run is reproducible. The binary declines
+every job without a listed family with `NO_SOLUTION`, as `quip-cpu-flow` does.
+
+`tests/flow_loops.rs` scores every state of side-2 instances of both families
+against the instance energy. It checks the change of each short cycle against
+a direct score. It then searches from every side-2 state, and it checks the
+charges, the labels, and the exact rescore after each kept move. A periodic
+side-2 lattice tests parallel links. Other tests reject bad boundary labels,
+bad link positions, and bad starts. A fixed-work run must match
+`tests/fixtures/flow_loops_golden.json`. A timed run must record its host time
+and a result for every start. To record the golden output again, set
+`QUIP_FLOW_LOOPS_BLESS=1` and run the test. `tests/flow_loops_conformance.rs`
+runs the family gate.
 
 ## Running
 
