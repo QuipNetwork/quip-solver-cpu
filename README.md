@@ -138,8 +138,9 @@ the degeneracy. H3 reports the separation that appears once they do.
 The accepted-rate and paired best-energy comparison that decide H3 run through
 the campaign analysis script rather than through this repository.
 
-The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
-published from crates.io.
+The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`)
+comes from the quip-solver-core repository, pinned to one commit. The pin
+returns to crates.io when quip-solver-core 0.0.9 is published.
 
 Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, `quip-cpu-flow-loops`, and `quip-cpu-dipolar` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
