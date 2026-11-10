@@ -35,6 +35,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
+| `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -135,7 +136,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, and `quip-cpu-dimer` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, and `quip-cpu-flow` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -298,6 +299,56 @@ QUIP_DIMER_PARITY=OUT cargo test --release --features experimental \
 
 `tests/dimer_conformance.rs` runs the family gate and the plain-job
 conformance against the binary.
+
+`quip-cpu-flow` is an exact structural baseline for two square-link
+families. Its `solver_id` is `quip-cpu-flow/1` and its algorithm is `flow`. It
+generates and accepts `quip/flow-static` revision 1 (F-static) and
+`quip/polariton-static` revision 1 (adapted P), with every parameter set.
+
+Both families put one spin on each link of a square lattice. The charge of a
+vertex is the arrows in minus the arrows out, and a labeled vertex must hold
+its label. The baseline starts from one orientation. The reversal of a link
+is one unit of flow on a network with one arc per link. `families::flow`
+solves that flow exactly. The code adapts `Flow::add` and `Flow::solve` of the research
+two-commodity routing solver. First it saturates each arc of negative cost.
+Then it routes each excess on a shortest path of reduced cost. The port
+bounds each capacity and checks each sum, so an overflow gives an error and
+never a wrong answer.
+
+The two families use the flow in two modes.
+
+- F-static starts from the requested direction of every link. A reversal
+  costs the cost of its link. The result is the orientation of lowest
+  cost that holds every label. The final node potentials prove that no
+  cheaper orientation exists. The status is `certified-optimum`.
+- Adapted P starts from spin `+1` on every link and has no costs. The free
+  boundary vertices connect to one hub node. The result holds every declared
+  charge, so its charge loss is 0, the lowest possible. The status is also
+  `certified-optimum`.
+
+When no orientation holds the labels, the status is `infeasible`. The solver
+returns the set of nodes that the excess can reach. That set must send more
+flow out than its arcs can carry, which proves the labels infeasible. The
+binary declines the job with `NO_SOLUTION` and puts the cut in the detail.
+
+Each job returns one state, because the method is exact and deterministic.
+The state passes the canonical feasibility hook of its contract, and the
+sampler rescores it from the job graph. The solver checks the cancel token
+before it builds the network and before each augmentation. Each job logs the
+mode, the status, the cost, the energy, and the number of augmentations.
+
+The binary declines every job without a listed family with `NO_SOLUTION`. A
+plain model has no flow structure. A `quip/defects-static` job (D-static, with
+its dipolar energy) or a `quip/two-commodity-routing` job (occupancy) reaches
+the sampler as a plain model, so the binary declines it too. The binary does
+not approximate those energies.
+
+`tests/flow_baselines.rs` checks every side-2 and some side-3 F-static
+instances against exhaustive enumeration of the instance energy. It checks
+synthetic requests of both modes against enumeration. Some of those requests
+have no solution. It checks that adapted-P constructions hold every declared charge
+on the reference and recipe instances. `tests/flow_conformance.rs` runs the
+family gate.
 
 ## Running
 

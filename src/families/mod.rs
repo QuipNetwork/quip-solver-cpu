@@ -3,6 +3,8 @@
 
 pub mod dimer_weighted;
 pub mod dimer_weighted_sampler;
+pub mod flow;
+pub mod flow_sampler;
 pub mod ice_sat;
 pub mod ice_sat_sampler;
 pub mod otsuka;
