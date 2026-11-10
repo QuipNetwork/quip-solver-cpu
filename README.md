@@ -31,6 +31,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-mfa` | mean-field annealing (the same kernel at bond dimension 1) | experimental |
 | `quip-cpu-flatiron` | belief-propagation tensor network on the problem graph | experimental |
 | `quip-cpu-otsuka` | Otsuka cluster annealing on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
+| `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -131,7 +132,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka` and `quip-cpu-ice-sat` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -154,6 +155,27 @@ anneals with the job's beta ladder, one cluster sweep per sweep. Every other
 job, and every family job that does not fit the kernel, runs on the SA kernel.
 `tests/family_conformance.rs` runs the family gate and the plain-job
 conformance against the binary.
+
+`quip-cpu-ice-sat` is a baseline for the strong layer of
+`quip/twisted-ice-dimer` revision 1. Its `solver_id` is `quip-cpu-ice-sat/1`.
+`families::ice_sat` writes each gauged tile as 10 clauses that allow exactly
+two of its four gauged spins at +1, and each pair as 2 clauses. An external
+Kissat executable solves the CNF. Each read runs Kissat with a 31-bit seed
+from `seed + r` and returns the decoded witness, with every unconstrained spin
+at +1, scored on the full instance. The sampler checks every tile and pair
+again without the CNF. A strong-layer witness ignores the weak layer, so its
+energy is not a ground-state claim.
+
+Set the executable with the `backend_toml` key `kissat` (an absolute path) or
+the `--kissat` flag, and the time limit of one run with `kissat_timeout_s` or
+`--kissat-timeout-s` (default 600 s). Kissat stops itself at that limit, and
+the sampler kills the run at most 30 s later. The `backend_toml` keys win. A family
+job with no checked witness gets a `Reject` with `NO_SOLUTION`. The detail
+in the log names the cause, such as an UNSAT verdict. Every
+other job runs on the SA kernel. `tests/ice_sat.rs` covers
+the encoding exhaustively on small fixtures and the process boundary with fake
+solvers. `tests/ice_sat_conformance.rs` runs the family gate against a real
+Kissat when `QUIP_KISSAT` names one and the test runs with `--ignored`.
 
 ## Running
 

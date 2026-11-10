@@ -48,7 +48,7 @@ const TWISTED_DIMER: &[FamilyClaim] = &[FamilyClaim {
 }];
 
 /// The metadata section that holds the pairs.
-const PAIRS_SECTION: u16 = 3;
+pub(crate) const PAIRS_SECTION: u16 = 3;
 
 /// The CPU sampler behind `quip-cpu-otsuka`.
 #[derive(Debug, Default)]
@@ -68,7 +68,7 @@ impl OtsukaSampler {
 /// The payload of section `kind` in a metadata region: a `u16` section count,
 /// then each section as a `u16` kind, a `u32` length, and the payload, all
 /// little-endian (FAM-67).
-fn section(metadata: &[u8], kind: u16) -> Option<&[u8]> {
+pub(crate) fn section(metadata: &[u8], kind: u16) -> Option<&[u8]> {
     let (count, mut rest) = metadata.split_first_chunk::<2>()?;
     for _ in 0..u16::from_le_bytes(*count) {
         let (head, tail) = rest.split_first_chunk::<6>()?;
@@ -84,7 +84,7 @@ fn section(metadata: &[u8], kind: u16) -> Option<&[u8]> {
 
 /// The pairs of a validated metadata section: a `u32` count, then each pair
 /// as two little-endian `u32` positions.
-fn parse_pairs(payload: &[u8]) -> Option<Vec<(u32, u32)>> {
+pub(crate) fn parse_pairs(payload: &[u8]) -> Option<Vec<(u32, u32)>> {
     let (count, rest) = payload.split_first_chunk::<4>()?;
     let count = usize::try_from(u32::from_le_bytes(*count)).ok()?;
     let (pairs, tail) = rest.as_chunks::<8>();

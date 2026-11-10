@@ -117,6 +117,11 @@ name = "quip-cpu-otsuka"
 path = "src/bin/quip_cpu_otsuka.rs"
 required-features = ["experimental"]
 
+[[bin]]
+name = "quip-cpu-ice-sat"
+path = "src/bin/quip_cpu_ice_sat.rs"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes
