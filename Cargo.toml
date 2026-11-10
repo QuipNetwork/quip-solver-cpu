@@ -166,9 +166,9 @@ mem-forget            = "deny"
 
 # The Quip solver contract, published from crates.io (quip.network/quip-solver-core).
 [dependencies]
-quip-proto = "0.0.6"
-quip-protocol = "0.0.6"
-quip-solver-core = "0.0.6"
+quip-proto = "0.0.7"
+quip-protocol = "0.0.7"
+quip-solver-core = "0.0.7"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync"] }
@@ -182,5 +182,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 proptest = "1.11.0"
-quip-solver-conformance = "0.0.6"
+quip-solver-conformance = "0.0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync", "process"] }
