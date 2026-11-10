@@ -2,7 +2,8 @@
 //!
 //! Algorithm notes (match dwave-neal / GPU ports):
 //! - Beta schedule: geometric from auto hot/cold range (or explicit range).
-//! - SA: per-read random restart; sequential Metropolis flips per sweep.
+//! - SA: per-read random restart; sequential Metropolis flips per sweep, with
+//!   one node drawn per sweep sitting it out ([`sweep_sit_out`]).
 //! - Gibbs: dispatched to `crate::gibbs_parallel`, which resamples whole
 //!   colour classes at once. This module holds no Gibbs kernel.
 //! - Solution energies are always scored with
@@ -195,6 +196,41 @@ pub(crate) fn random_spins(n: usize, rng: &mut SmallRng) -> Vec<i8> {
         .collect()
 }
 
+/// The node one sweep leaves out, uniform over `0..n`.
+///
+/// Flat moves (`ΔE = 0`) are always accepted and a sweep visits the nodes in
+/// index order. If every sweep visited every node, each sweep would shift
+/// every domain wall of a zero-field chain one site the same way and no two
+/// walls would ever meet. A wall that reaches the node left out stays where
+/// it is for that sweep, and the wall behind it catches up.
+///
+/// Costs one draw per sweep. The scalar kernels draw it at the same point so
+/// their random streams stay aligned.
+#[inline]
+pub(crate) fn sweep_sit_out(n: usize, rng: &mut SmallRng) -> usize {
+    sit_out_from_draw(n, rng.gen::<u64>())
+}
+
+/// Map a uniform 64-bit draw onto the node in `0..n` that sits a sweep out,
+/// by taking the high half of the 128-bit product.
+///
+/// A model of fewer than two nodes leaves none out: its only node has no
+/// neighbor to wait for, and skipping it every sweep would return its random
+/// start. The result is then `usize::MAX`, which matches no node.
+#[inline]
+pub(crate) fn sit_out_from_draw(n: usize, draw: u64) -> usize {
+    if n < 2 {
+        return usize::MAX;
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the high half of draw * n is below n, which is a usize"
+    )]
+    {
+        ((u128::from(draw) * n as u128) >> 64) as usize
+    }
+}
+
 fn metropolis_accept(delta: f64, beta: f64, rng: &mut SmallRng) -> bool {
     if delta <= 0.0 {
         return true;
@@ -230,6 +266,37 @@ impl Kernel {
 /// Marker returned when a cancel checkpoint fires mid-attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SampleCancelled;
+
+/// Metropolis updates for the nodes in `vars`, in order, at one `beta`.
+/// Returns the number of accepted flips.
+///
+/// Always inlined: a sweep calls it once on each side of the node sitting
+/// out, and both calls must compile to plain loops inside the read.
+#[inline(always)]
+fn metropolis_range(
+    graph: &CpuGraph,
+    beta: f64,
+    spins: &mut [i8],
+    heff: &mut [f64],
+    rng: &mut SmallRng,
+    vars: std::ops::Range<usize>,
+) -> u64 {
+    let mut accepts = 0;
+    for var in vars {
+        #[cfg(feature = "fine-spans")]
+        let _d = trace_span!("spin_decision").entered();
+        let s = spin_sign(spins[var]);
+        let delta = -2.0 * s * heff[var];
+        if metropolis_accept(delta, beta, rng) {
+            #[cfg(feature = "fine-spans")]
+            let _f = trace_span!("apply_flip").entered();
+            spins[var] = -spins[var];
+            apply_field_delta(graph, heff, var, -2.0 * s);
+            accepts += 1;
+        }
+    }
+    accepts
+}
 
 pub(crate) fn anneal_one_read(
     graph: &CpuGraph,
@@ -277,19 +344,18 @@ pub(crate) fn anneal_one_read(
                     return Err(SampleCancelled);
                 }
             }
-            for var in 0..n {
-                #[cfg(feature = "fine-spans")]
-                let _d = trace_span!("spin_decision").entered();
-                let s = spin_sign(spins[var]);
-                let delta = -2.0 * s * heff[var];
-                if metropolis_accept(delta, beta, rng) {
-                    #[cfg(feature = "fine-spans")]
-                    let _f = trace_span!("apply_flip").entered();
-                    spins[var] = -spins[var];
-                    apply_field_delta(graph, &mut heff, var, -2.0 * s);
-                    accepts += 1;
-                }
-            }
+            // Two plain ranges around the node sitting out, so the hot loop
+            // carries no per-node comparison. `usize::MAX` leaves none out.
+            let end = sweep_sit_out(n, rng).min(n);
+            accepts += metropolis_range(graph, beta, &mut spins, &mut heff, rng, 0..end);
+            accepts += metropolis_range(
+                graph,
+                beta,
+                &mut spins,
+                &mut heff,
+                rng,
+                end.saturating_add(1)..n,
+            );
         }
     }
     drop(sweep_span);
@@ -746,6 +812,28 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn the_node_sitting_out_covers_the_node_range_and_stays_inside_it() {
+        assert_eq!(sit_out_from_draw(16, 0), 0);
+        assert_eq!(sit_out_from_draw(16, u64::MAX), 15);
+        assert_eq!(sit_out_from_draw(16, 1 << 63), 8);
+        assert_eq!(sit_out_from_draw(2, u64::MAX), 1);
+
+        let mut rng = SmallRng::seed_from_u64(3);
+        let mut seen = [false; 5];
+        for _ in 0..200 {
+            seen[sweep_sit_out(5, &mut rng)] = true;
+        }
+        assert_eq!(seen, [true; 5]);
+    }
+
+    #[test]
+    fn a_model_of_fewer_than_two_nodes_leaves_none_out() {
+        assert_eq!(sit_out_from_draw(1, 0), usize::MAX);
+        assert_eq!(sit_out_from_draw(1, u64::MAX), usize::MAX);
+        assert_eq!(sit_out_from_draw(0, 7), usize::MAX);
+    }
+
     // ---- polish_from ----
 
     #[test]

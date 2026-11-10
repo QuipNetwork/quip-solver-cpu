@@ -11,6 +11,8 @@ measure.
 MSA visits color classes in order at each sweep and processes every replica word
 at each temperature. It fills one reusable 24 KiB per-lane threshold row per temperature.
 Each replica word uses a seed-derived offset into that row.
+Each word also leaves one seed-derived node out of every sweep (see
+[Zero-field models](#zero-field-models-qui-1980)).
 The CPU retains SmallRng and f64 temperatures, so CPU and CUDA trajectories can differ.
 
 The packed kernel skips neighbor counting when the threshold accepts every lane.
@@ -33,6 +35,26 @@ On a Ryzen 9 5950X, the CPU optimizations measured 1.62 to 1.87 times faster
 for degree-20 cases than the initial CPU port of the CUDA sweep loop.
 All seven cases preserved output fingerprints in five alternating rounds with
 seven timed repeats per case. Target-energy success rates require a separate corpus study.
+
+## Zero-field models (QUI-1980)
+
+Every annealing kernel accepts a flat move, one with `ΔE = 0`, without a draw.
+On a model with no linear field, a sweep that visits the nodes the same way
+every time then moves every domain wall of a chain in step, and walls that move
+in step never meet. The read keeps the energy of its random start at any
+temperature. Every sweep therefore leaves one node out, chosen afresh each
+sweep. A wall that reaches that node waits, and the wall behind it catches up.
+
+- SA, on both the `f64` and the integer arithmetic, draws the node from the
+  read's random stream. This is one draw per sweep.
+- FSA takes it from the high bits of the draw that already supplies the
+  sweep's offset into the threshold table.
+- MSA takes it per replica word, from the high bits of the hash that already
+  supplies the word's row offset.
+
+No kernel rejects a flat move, and the order of a sweep is unchanged. A model
+of one node leaves none out. `tests/zero_field_annealing.rs` runs a 16-spin
+zero-field ring through `--solve` on all three binaries.
 
 ## Per-lane thresholds (QUI-1596)
 

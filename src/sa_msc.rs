@@ -76,7 +76,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::coloring::Coloring;
 use crate::sa_int::{draw_threshold, fill_cuts, IntGraph};
-use crate::sampler_core::SampleCancelled;
+use crate::sampler_core::{sit_out_from_draw, SampleCancelled};
 
 /// Replicas advanced by one word update.
 pub(crate) const LANES: usize = u64::BITS as usize;
@@ -105,7 +105,7 @@ pub(crate) const LANE_ROW: usize = 512;
 const _: () = assert!(LANE_ROW.is_power_of_two());
 
 /// Name of the randomness scheme this kernel implements.
-pub(crate) const RNG_SCHEME: &str = "per-lane-threshold-planes-v1";
+pub(crate) const RNG_SCHEME: &str = "per-lane-threshold-planes-v2";
 
 /// A per-lane six-bit value, as bit planes.
 type Planes = [u64; PLANES];
@@ -255,6 +255,12 @@ pub(crate) fn bond_counts(graph: &IntGraph) -> Option<Vec<u8>> {
 
 /// Advance all replica words together. One threshold row is redrawn per beta
 /// and shared across words. Colors run in sequence, with a per-word offset.
+///
+/// Each word leaves one node out of every sweep ([`word_shift`]). The order
+/// inside a color does not matter and flat moves are always accepted, so with
+/// every node updated a zero-field chain's domain walls all advance two sites
+/// per sweep and walls on the same sublattice never meet. A wall that reaches
+/// the node left out waits one step, changes sublattice, and meets the rest.
 pub(crate) fn anneal_words(
     graph: &IntGraph,
     counts: &[u8],
@@ -285,8 +291,16 @@ pub(crate) fn anneal_words(
             }
             for class in colors.classes() {
                 for (word, state) in states.iter_mut().enumerate() {
-                    let off = word_offset(params.seed, word, beta_idx, sweep);
+                    let (off, skip) =
+                        word_shift(params.seed, word, beta_idx, sweep, graph.num_nodes());
+                    // Nodes of one color do not interact, so putting the word
+                    // back after the color is the same as never updating the
+                    // node, and the sweep loop carries no per-node comparison.
+                    let held = state.spin.get(skip).copied();
                     sweep_word(graph, counts, &row, class, off, state);
+                    if let (Some(word), Some(slot)) = (held, state.spin.get_mut(skip)) {
+                        *slot = word;
+                    }
                 }
             }
         }
@@ -294,8 +308,17 @@ pub(crate) fn anneal_words(
     Ok(())
 }
 
-/// Splitmix64 offset into the lane row for one word at one sweep.
-fn word_offset(seed: u64, word: usize, beta_idx: usize, sweep: usize) -> usize {
+/// Splitmix64 hash for one word at one sweep, split two ways: the low bits
+/// are the offset into the lane row, the high bits pick the node in `0..n`
+/// that the word leaves out of this sweep
+/// ([`sit_out_from_draw`]).
+pub(crate) fn word_shift(
+    seed: u64,
+    word: usize,
+    beta_idx: usize,
+    sweep: usize,
+    n: usize,
+) -> (usize, usize) {
     let mut x = (seed
         ^ (word as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)
         ^ ((beta_idx as u64) << 20)
@@ -303,7 +326,8 @@ fn word_offset(seed: u64, word: usize, beta_idx: usize, sweep: usize) -> usize {
         .wrapping_add(0x9E37_79B9_7F4A_7C15);
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    ((x ^ (x >> 31)) as usize) & (LANE_ROW - 1)
+    x ^= x >> 31;
+    ((x as usize) & (LANE_ROW - 1), sit_out_from_draw(n, x))
 }
 
 /// Update a color's nodes in one word from the per-lane threshold row.

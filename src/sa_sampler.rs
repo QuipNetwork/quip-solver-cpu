@@ -29,7 +29,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use crate::coloring::Coloring;
-use crate::sa_int::{anneal_from, sweep_offsets, threshold_draws, threshold_table_fits, IntGraph};
+use crate::sa_int::{anneal_from, sweep_draws, threshold_draws, threshold_table_fits, IntGraph};
 use crate::sa_msc::{anneal_words, bond_counts, MscState, LANES};
 use crate::sampler_core::{
     build_beta_schedule, build_seeded_beta_schedule, effective_sweeps_per_beta,
@@ -436,14 +436,14 @@ fn anneal_int(
                     }
                 }
                 let mut rng = read_rng(params.seed, read);
-                // Drawn even for a seeded read, so the offsets that follow
+                // Drawn even for a seeded read, so the sweep draws that follow
                 // come from the same point in the stream as a cold read's.
                 let mut spins = crate::sampler_core::random_spins(int.num_nodes(), &mut rng);
                 if let Some(seed) = seeds.get(read) {
                     spins.clone_from(seed);
                 }
-                let offsets = sweep_offsets(betas.len(), sweeps_per, &mut rng);
-                anneal_from(int, &draws, sweeps_per, &mut spins, &offsets, cancel)?;
+                let shifts = sweep_draws(betas.len(), sweeps_per, &mut rng);
+                anneal_from(int, &draws, sweeps_per, &mut spins, &shifts, cancel)?;
                 results.push(score(&spins, graph));
             }
         }
@@ -1175,11 +1175,17 @@ mod tests {
             }
             rows.push(row);
         }
-        // Splitmix64 offsets for seed 19, indexed by beta, word and sweep.
+        // Splitmix64 offsets for seed 19, indexed by beta, word and sweep,
+        // and the node each word leaves out of that sweep.
         let offsets = [
             [[68, 50, 355], [453, 114, 48]],
             [[189, 345, 173], [163, 219, 477]],
             [[60, 317, 93], [208, 167, 347]],
+        ];
+        let skips = [
+            [[3, 0, 2], [0, 2, 0]],
+            [[1, 3, 3], [4, 0, 1]],
+            [[4, 3, 4], [1, 2, 1]],
         ];
         let actual = sample_sa_variant(&graph, &params, SaVariant::MultiSpin, None)
             .expect("sampling succeeds");
@@ -1189,8 +1195,12 @@ mod tests {
             for lane in 0..64.min(params.num_reads - base) {
                 let mut spins = state.lane(lane);
                 for (beta_idx, row) in rows.iter().enumerate() {
-                    for &off in &offsets[beta_idx][word] {
+                    for (&off, &skip) in offsets[beta_idx][word].iter().zip(&skips[beta_idx][word])
+                    {
                         for var in [1, 3, 0, 2, 4] {
+                            if var == skip {
+                                continue;
+                            }
                             let mut field = graph.h[var];
                             for (&(u, v), &j) in graph.edges.iter().zip(&graph.j) {
                                 if u == var {
@@ -1214,12 +1224,19 @@ mod tests {
 
     #[test]
     fn msa_sweep_budget_honors_small_requests_and_complete_rungs() {
-        // With no bonds or fields, every attempted flip is accepted. The
-        // final signs expose the sweep count without depending on randomness.
+        // With no bonds or fields, every attempted flip is accepted, and each
+        // sweep attempts every node but the one it leaves out. The final signs
+        // expose the sweep count without depending on the threshold draws.
         let graph = IsingGraph::new(vec![0.0; 5], vec![], vec![]);
         let mut rng = read_rng(17, 0);
         let initial = MscState::random(5, &mut rng).lane(0);
-        for (sweeps, per_beta, flips) in [(0, 0, 1), (0, 4, 4), (2, 4, 2), (7, 3, 6), (9, 3, 9)] {
+        for (sweeps, per_beta, rungs, per_rung) in [
+            (0, 0, 1, 1),
+            (0, 4, 1, 4),
+            (2, 4, 1, 2),
+            (7, 3, 2, 3),
+            (9, 3, 3, 3),
+        ] {
             let params = SampleParams {
                 num_reads: 1,
                 num_sweeps: sweeps,
@@ -1229,10 +1246,17 @@ mod tests {
             };
             let actual = sample_sa_variant(&graph, &params, SaVariant::MultiSpin, None)
                 .expect("sampling succeeds");
-            let expected: Vec<i8> = initial
-                .iter()
-                .map(|&s| if flips % 2 == 0 { s } else { -s })
-                .collect();
+            let mut expected = initial.clone();
+            for beta_idx in 0..rungs {
+                for sweep in 0..per_rung {
+                    let (_, skip) = crate::sa_msc::word_shift(17, 0, beta_idx, sweep, 5);
+                    for (var, spin) in expected.iter_mut().enumerate() {
+                        if var != skip {
+                            *spin = -*spin;
+                        }
+                    }
+                }
+            }
             assert_eq!(
                 actual[0].spins, expected,
                 "sweeps={sweeps}, per_beta={per_beta}"
