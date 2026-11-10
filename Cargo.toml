@@ -163,6 +163,11 @@ name = "quip-cpu-flow-loops"
 path = "src/bin/quip_cpu_flow_loops.rs"
 required-features = ["experimental"]
 
+[[bin]]
+name = "quip-cpu-dipolar"
+path = "src/bin/quip_cpu_dipolar.rs"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes

@@ -40,6 +40,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
 | `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job declined | experimental |
+| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, greedy descent on every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -140,7 +141,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, and `quip-cpu-flow-loops` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, `quip-cpu-flow-loops`, and `quip-cpu-dipolar` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -557,6 +558,54 @@ bad link positions, and bad starts. A fixed-work run must match
 and a result for every start. To record the golden output again, set
 `QUIP_FLOW_LOOPS_BLESS=1` and run the test. `tests/flow_loops_conformance.rs`
 runs the family gate.
+
+`quip-cpu-dipolar` searches static defect patterns. Its `solver_id` is
+`quip-cpu-dipolar/1`, its algorithm is `dipolar`, and its policy is
+`dipolar-strings/1`. It generates and accepts `quip/defects-static`
+revision 1, which allows the sides 2 and 3. The tests cover those two sides.
+The binary advertises `initial-spins`. Every other job runs the
+`greedy-nat/1` descent.
+
+`families::dipolar_search` is a new search. No research solver exists for
+this family. Each move flips a list of link ids. The move is either a loop,
+which is a directed cycle, or a string, which is a directed path between two
+free boundary vertices. No move flips
+a pinned link or enters an obstacle, so every labeled charge stays the same.
+The search checks each move directly before it scores the move. It keeps the
+local field of each node and updates the score with checked integer
+arithmetic. The Metropolis rule decides on the exact integer change. At the
+end of each read, the search computes the score again from the coefficients.
+It also computes the physical energy from the dipolar table and checks every
+constraint. The sampler then compares the score with the canonical score of
+the job graph. A job fails when any check fails.
+
+A job without states runs the search mode. Each read starts from the
+reference state, with every link spin `+1`. Paths between opposite labels fix
+the labels of that state. A job with states runs the postprocess mode. The
+search repairs each infeasible supplied state, and then searches it. The
+result keeps a state that no path can repair without a change. The result holds the final
+state of every read, in order. Read `r` seeds its generator from the job seed
+and `r`. The instance nonce never seeds the search.
+
+By default each read does a fixed amount of work: `num_sweeps` proposals for
+each link. The `backend_toml` key `budget_seconds` sets a declared budget of
+elapsed time for each read. The job log records the declared budget apart
+from the measured time and the work done. The log also records the rounding
+bound of the table, which is one milli for each kept coupling. An improvement
+inside that bound is not resolved.
+
+The dipolar table of revision 1 has the oracle calibration. It supports no
+physical claim. The key `evidence = "physical"` asks for a physical claim.
+The binary then declines every family job with the reason
+`insufficient physical evidence`. The default `evidence = "analytic"` runs
+every job.
+
+`tests/dipolar_search.rs` checks all 4096 states of four lattices with
+`L = 2` against the feasibility hook, the observables, and the energy of the
+family. It checks every proposal from each state against a full
+recomputation. It also checks analytic fixtures with a charged center, the
+admission of invalid requests and instances, the direct check of invalid
+moves and routes, both work modes, and a golden output for a fixed seed.
 
 ## Running
 

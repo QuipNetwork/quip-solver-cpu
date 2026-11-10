@@ -35,6 +35,7 @@ mod spin_barrier;
 pub use families::dimer_weighted_sampler::{
     DimerSampler, CPU_DIMER_IDENTITY, DIMER_METHOD, DIMER_SOLVER_ID,
 };
+pub use families::dipolar_sampler::{DipolarSampler, CPU_DIPOLAR_IDENTITY, DIPOLAR_SOLVER_ID};
 pub use families::flow_loops_sampler::{
     FlowLoopsSampler, CPU_FLOW_LOOPS_IDENTITY, FLOW_LOOPS_SOLVER_ID,
 };
@@ -738,6 +739,7 @@ mod tests {
             CPU_GADGET_REPAIR_IDENTITY,
             CPU_ROUTING_IDENTITY,
             CPU_FLOW_LOOPS_IDENTITY,
+            CPU_DIPOLAR_IDENTITY,
         ];
         let linear = quip_solver_core::LINEAR_SCHEDULE_FEATURE;
         for id in &ladder {
