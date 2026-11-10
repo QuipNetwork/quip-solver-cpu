@@ -33,6 +33,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-otsuka` | Otsuka cluster annealing on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
+| `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -133,7 +134,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, and `quip-cpu-greedy` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, and `quip-cpu-pairworm` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -206,6 +207,43 @@ states, energies, and applied moves with the research descent:
 QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/greedy_parity/export.py OUT
 QUIP_GREEDY_PARITY=OUT cargo test --release --features experimental \
     --test postprocess_greedy -- --ignored research_parity
+```
+
+`quip-cpu-pairworm` is a postprocess for the three selected twisted-ice
+controls. Its `solver_id` is `quip-cpu-pairworm/1`, its algorithm is
+`pair-worm`, and its policy is `ice-pairs-pw/1`. It advertises
+`initial-spins` and accepts `quip/twisted-ice-dimer` revision 1 jobs with the
+recipes `x-w62-p1200`, `x-w62-p1350`, and `x-w45-p1200`. It generates no
+family work. Every other job runs the `greedy-nat/1` descent.
+
+`postprocess::pair_worm` ports the research `pairworm.c` and the `pw` schedule
+of `run.py` with default options. A worm flips both ends of a planted pair as
+one unit and walks until every tile it touched is neutral again. The schedule
+takes the supplied states in order of energy, lowest first. Each state runs
+the greedy descent alternated with the strict worm. The lowest-energy result
+then takes improving blocks from the other results. Anneal cycles of the worm
+at 250 milli use the rest of the budget.
+
+The declared budget is 0.76 s per job. The binary measures elapsed time on the
+thread that runs the job. The research measured process CPU time on one core.
+The clock decides how many states and anneal cycles run, so two hosts may give
+different results for one timed job. The result lists the final state first
+and then the descended state of each visited read. The sampler rescores every
+state from the job graph. The worm draws its random numbers from the job seed.
+The log line of each job records the policy and the declared budget next to
+the measured time and the work done.
+
+`tests/postprocess_pairs.rs` checks the tile preparation, every worm mode,
+crossover, the defect counts, and the schedule with fixed work against
+vectors from the research code in `tests/fixtures/pair_worm_vectors.json`.
+`research/pairworm_parity/export.py vectors` writes that file. The ignored
+test `research_parity` replays the saved research runs with their recorded
+work and compares the final states:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/pairworm_parity/export.py research OUT
+QUIP_PAIRWORM_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_pairs -- --ignored research_parity
 ```
 
 ## Running

@@ -73,7 +73,7 @@ impl GreedySampler {
 }
 
 /// The integer model of a job graph.
-fn job_ising(graph: &IsingGraph) -> Result<Ising, SampleError> {
+pub(super) fn job_ising(graph: &IsingGraph) -> Result<Ising, SampleError> {
     let milli = |c: &f64| {
         coefficient_milli(*c)
             .ok_or_else(|| SampleError::Declined("a coefficient is not finite".to_owned()))
@@ -99,14 +99,14 @@ fn job_ising(graph: &IsingGraph) -> Result<Ising, SampleError> {
 
 /// The declared structure of a family job, in dense node positions.
 #[derive(Default)]
-struct Structure {
-    tiles: Vec<[u32; 4]>,
-    pairs: Vec<(u32, u32)>,
+pub(super) struct Structure {
+    pub(super) tiles: Vec<[u32; 4]>,
+    pub(super) pairs: Vec<(u32, u32)>,
 }
 
 /// The structure of a job: the tiles and pairs of a validated
 /// twisted-ice-dimer job, and none for any other job.
-fn job_structure(graph: &IsingGraph, family: Option<&FamilyContext>) -> Structure {
+pub(super) fn job_structure(graph: &IsingGraph, family: Option<&FamilyContext>) -> Structure {
     family
         .filter(|f| {
             f.family_id() == TWISTED_DIMER_V1.family_id && f.revision() == TWISTED_DIMER_V1.revision
@@ -117,7 +117,7 @@ fn job_structure(graph: &IsingGraph, family: Option<&FamilyContext>) -> Structur
 
 /// The tiles and pairs of a twisted-ice-dimer instance, or `None` when the
 /// instance does not fit `graph`.
-fn instance_structure(graph: &IsingGraph, instance: &Instance) -> Option<Structure> {
+pub(super) fn instance_structure(graph: &IsingGraph, instance: &Instance) -> Option<Structure> {
     if instance.node_ids().len() != graph.h.len() || instance.edges().len() != graph.edges.len() {
         tracing::warn!("a twisted-ice-dimer instance does not fit its job graph");
         return None;
@@ -128,13 +128,13 @@ fn instance_structure(graph: &IsingGraph, instance: &Instance) -> Option<Structu
 }
 
 /// Why a job produced no reads.
-enum Failure {
+pub(super) enum Failure {
     Rejected(SampleError),
     Cancelled,
 }
 
 /// Descend every start state of one job.
-fn greedy_reads(
+pub(super) fn greedy_reads(
     graph: &IsingGraph,
     params: &SampleParams,
     starts: Option<&[Vec<i8>]>,
@@ -191,7 +191,7 @@ fn greedy_reads(
     Ok(reads)
 }
 
-fn random_states(n: usize, params: &SampleParams) -> Vec<Vec<i8>> {
+pub(super) fn random_states(n: usize, params: &SampleParams) -> Vec<Vec<i8>> {
     let mut rng = SmallRng::seed_from_u64(params.seed);
     (0..params.num_reads)
         .map(|_| {
@@ -227,7 +227,7 @@ fn log_job(
     );
 }
 
-fn into_result(
+pub(super) fn into_result(
     reads: Result<Vec<SamplerResult>, Failure>,
 ) -> Result<Vec<SamplerResult>, SampleError> {
     match reads {

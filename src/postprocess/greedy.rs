@@ -94,6 +94,8 @@ pub enum DescentError {
     },
     /// The cancel token abandoned this job's watermark.
     Cancelled,
+    /// No start state was given.
+    Empty,
 }
 
 impl fmt::Display for DescentError {
@@ -102,6 +104,7 @@ impl fmt::Display for DescentError {
             Self::Length => write!(f, "the state does not have one spin per node"),
             Self::Value { node } => write!(f, "spin {node} is not 1 or -1"),
             Self::Cancelled => write!(f, "the descent was cancelled"),
+            Self::Empty => write!(f, "no start state was given"),
         }
     }
 }
@@ -196,11 +199,25 @@ impl Ising {
         fields + couplings
     }
 
-    fn row(&self, u: usize) -> &[(u32, i64)] {
+    /// The neighbours of `u` with their couplings, in ascending node order.
+    pub(super) fn row(&self, u: usize) -> &[(u32, i64)] {
         &self.adj[self.adj_ptr[u]..self.adj_ptr[u + 1]]
     }
 
-    fn field(&self, s: &[i8], u: usize) -> i64 {
+    /// The coupling on edge `(u, v)`, or `None` when the model has no such
+    /// edge or a node is outside the model.
+    #[must_use]
+    pub fn coupling(&self, u: u32, v: u32) -> Option<i64> {
+        if u as usize >= self.num_nodes() {
+            return None;
+        }
+        let row = self.row(u as usize);
+        row.binary_search_by_key(&v, |&(w, _)| w)
+            .ok()
+            .map(|at| row[at].1)
+    }
+
+    pub(super) fn field(&self, s: &[i8], u: usize) -> i64 {
         self.h[u]
             + self
                 .row(u)
