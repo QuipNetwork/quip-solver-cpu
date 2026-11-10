@@ -37,6 +37,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
 | `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -137,7 +138,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, and `quip-cpu-tileworm` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, and `quip-cpu-gadget-repair` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -401,6 +402,55 @@ checks the tile counts, the work count, and that the replay energy stays within
 QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/tileworm_parity/export.py research OUT
 QUIP_TILEWORM_PARITY=OUT cargo test --release --features experimental \
     --test postprocess_tiles -- --ignored research_parity
+
+`quip-cpu-gadget-repair` is a postprocess for routing jobs. Its `solver_id`
+is `quip-cpu-gadget-repair/1`, its algorithm is `gadget-repair`, and its
+policy is `gadget-repair/1`. It advertises `initial-spins`. It accepts
+`quip/two-commodity-routing` revision 1 jobs of any parameter set. It
+generates no family work. Every other job runs the `greedy-nat/1` descent.
+This keeps the binary useful for plain and warm jobs, as the other
+postprocess binaries do. The binary declines a routing job with a malformed
+structure, gives the reason, and touches no state.
+
+`postprocess::gadget_repair` ports the gadget extraction of `gadgets.py` for
+the routing cell, `repair_run` of `repair.c`, and the schedule of `run.py`
+with default options. The routing cell has no auxiliary spins, so that part of
+the source is not ported. Each arc owns one commodity 1 spin and a two-spin
+commodity 2 chain. The moves are single spins, chains, and pairs of units that
+share a gadget. A repair first flips every move that lowers the energy. It then walks
+ejection chains over the gadget neighbours. A tabu search uses the time that
+remains. The schedule descends the supplied states with the natural moves. It
+repairs the best four states and a majority vote of the best eight. It keeps
+the lowest energy.
+
+The declared budget is 0.05 s per job. The binary measures elapsed time on the
+thread that runs the job. The research measured process CPU time on one core.
+The clock decides how many states the binary repairs and where each repair stops, so
+two hosts may give different results for one timed job. The result lists the
+final state first and then the repaired state of each start. The sampler
+rescores every state from the job graph. The repair draws its random numbers
+from the job seed.
+
+A lower energy does not prove a valid routing. The log line of each job counts
+the defects of the final state and of the best supplied state. A defect is a
+capacity conflict, a node and commodity with the wrong flow, or a broken chain. It also gives the energy with the instance offset. The counts
+come from the family routing check, never from the energy. The log line also
+records the policy and the declared budget next to the measured time and the
+clock reads of each repair.
+
+`tests/postprocess_routing.rs` checks the extraction, the repair with a fixed
+clock, and the schedule with recorded work against vectors from the research
+code in `tests/fixtures/gadget_repair_vectors.json`.
+`research/gadget_repair_parity/export.py vectors` writes that file. The
+vectors replace the CPU clock of `repair.c` by a count of clock reads. The
+same file holds the malformed chain and mapping cases. The ignored test
+`research_parity` replays six saved research runs. It finds the clock count of
+each repair that gives the saved statistics, and compares the final states:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/gadget_repair_parity/export.py research OUT
+QUIP_GADGET_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_routing -- --ignored research_parity
 ```
 
 ## Running

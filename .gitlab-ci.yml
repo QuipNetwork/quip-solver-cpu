@@ -12,7 +12,7 @@ variables:
   # 17 binary targets on three platforms. The build jobs read the target list
   # out of the manifest, so this number is the one place a new binary has to be
   # acknowledged by hand. Publishing a binary stays a deliberate decision.
-  ASSET_COUNT: "72"
+  ASSET_COUNT: "75"
 
 default:
   image: rust:1.97

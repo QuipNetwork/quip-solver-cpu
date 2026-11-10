@@ -43,6 +43,9 @@ pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
 pub use gibbs_parallel::{ConfigError, GibbsConfig, GibbsParallelism};
 pub use mps::{sample_ising_mps, InitMode, MpsConfig};
 pub use mps_sampler::{MpsSampler, CPU_MFA_IDENTITY, CPU_MPS_IDENTITY};
+pub use postprocess::gadget_repair_sampler::{
+    GadgetRepairSampler, CPU_GADGET_REPAIR_IDENTITY, GADGET_REPAIR_SOLVER_ID,
+};
 pub use postprocess::pair_worm_sampler::{
     PairWormSampler, CPU_PAIR_WORM_IDENTITY, PAIR_WORM_SOLVER_ID,
 };
@@ -725,6 +728,7 @@ mod tests {
             CPU_PAIR_WORM_IDENTITY,
             CPU_FLOW_IDENTITY,
             CPU_TILE_WORM_IDENTITY,
+            CPU_GADGET_REPAIR_IDENTITY,
         ];
         let linear = quip_solver_core::LINEAR_SCHEDULE_FEATURE;
         for id in &ladder {
