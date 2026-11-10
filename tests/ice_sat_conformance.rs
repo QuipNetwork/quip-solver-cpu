@@ -42,7 +42,7 @@ fn socket(name: &str) -> String {
 fn the_command_line_declares_the_twisted_dimer_family() {
     let caps = command_line_capabilities();
     assert_eq!(caps["backend"], "cpu", "{caps}");
-    assert_eq!(caps["algorithm"], "ice-sat", "{caps}");
+    assert_eq!(caps["algorithm"], "sat", "{caps}");
     assert_eq!(caps["solverId"], SOLVER_ID, "{caps}");
     for list in ["generatedFamilies", "acceptedFamilies"] {
         let entries = caps[list].as_array().expect("a family list");
@@ -68,7 +68,7 @@ async fn the_session_advertises_what_the_command_line_prints() {
         .as_ref()
         .expect("a GetCapabilities answer");
     assert_eq!(session.backend(), Backend::Cpu);
-    assert_eq!(session.algorithm(), Algorithm::IceSat);
+    assert_eq!(session.algorithm(), Algorithm::Sat);
     assert_eq!(session.solver_id, SOLVER_ID);
     for families in [&session.generated_families, &session.accepted_families] {
         assert_eq!(families.len(), 1);

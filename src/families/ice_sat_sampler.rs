@@ -35,7 +35,7 @@ pub const ICE_SAT_SOLVER_ID: &str = "quip-cpu-ice-sat/1";
 /// `quip-cpu-sa`, because the SA kernel serves every job outside the family.
 pub const CPU_ICE_SAT_IDENTITY: BackendIdentity = BackendIdentity {
     backend: quip_proto::v1::Backend::Cpu,
-    algorithm: quip_proto::v1::Algorithm::IceSat,
+    algorithm: quip_proto::v1::Algorithm::Sat,
     max_nodes: crate::DEFAULT_MAX_NODES,
     max_edges: crate::DEFAULT_MAX_EDGES,
     features: crate::STREAMING_LINEAR,
