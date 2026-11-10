@@ -152,6 +152,11 @@ name = "quip-cpu-gadget-repair"
 path = "src/bin/quip_cpu_gadget_repair.rs"
 required-features = ["experimental"]
 
+[[bin]]
+name = "quip-cpu-routing"
+path = "src/bin/quip_cpu_routing.rs"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes

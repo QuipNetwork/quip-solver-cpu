@@ -38,6 +38,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
 | `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -138,7 +139,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, and `quip-cpu-gadget-repair` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, and `quip-cpu-routing` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -451,6 +452,44 @@ each repair that gives the saved statistics, and compares the final states:
 QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/gadget_repair_parity/export.py research OUT
 QUIP_GADGET_PARITY=OUT cargo test --release --features experimental \
     --test postprocess_routing -- --ignored research_parity
+
+`quip-cpu-routing` solves `quip/two-commodity-routing` revision 1. Its
+`solver_id` is `quip-cpu-routing/1` and its algorithm is `routing`. It accepts
+every valid parameter set of revision 1 and generates no family work. It has no
+fallback kernel. It declines a job with no family metadata, another family,
+another revision, or a routing section that does not decode.
+
+`families::routing` ports the research solver `routesolve`. With one commodity
+fixed, the energy of the other is a minimum-cost circulation. The solver
+solves it exactly. The two commodities then alternate, at most 50 times, until
+a response does not improve the energy. A single-flip descent on the full Ising
+model ends each run. The solver runs both start orders and returns both final
+states, the lower energy first. The cost of an arc includes the capacity penalty
+when the other commodity uses it, and a hub node absorbs the conservation
+imbalance. The energy keeps the original convention in milli. The constants
+248 and 496 and the limit of 50 alternations are the research defaults.
+
+The result is the complete ordered spin vector of the job. A spin that no arc
+uses is `+1`. The sampler rescores every state from the job graph. It logs a
+start order that fails and returns the other one. It declines a job where both
+fail. The two start orders often end at different energies, so the policy
+certifies no global optimum. The exact solver for the adapted F-static family
+is a different tool. The routing policy has no clock and no random numbers, so
+`num_reads` and the seed have no effect. The log line of each job gives the
+elapsed time, the work, and `optimum_certificate = false`.
+
+`tests/routing_solver.rs` compares both start orders to the research solver
+on six models with inactive spins, with vectors in
+`tests/fixtures/routing_vectors.json`. It also checks the independent scores,
+refused models, tampered metadata, and instances of the family.
+`research/routing_parity/export.py vectors` writes the file by running the
+research binary. The ignored test `research_parity` compares the saved
+`t1-flow` states of 12 research models bit for bit:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/routing_parity/export.py research OUT
+QUIP_ROUTING_PARITY=OUT cargo test --release --features experimental \
+    --test routing_solver -- --ignored research_parity
 ```
 
 ## Running

@@ -38,6 +38,10 @@ pub use families::dimer_weighted_sampler::{
 pub use families::flow_sampler::{FlowSampler, CPU_FLOW_IDENTITY, FLOW_SOLVER_ID};
 pub use families::ice_sat_sampler::{IceSatSampler, CPU_ICE_SAT_IDENTITY, ICE_SAT_SOLVER_ID};
 pub use families::otsuka_sampler::{OtsukaSampler, CPU_OTSUKA_IDENTITY, OTSUKA_SOLVER_ID};
+pub use families::routing_sampler::{
+    solve_instance as solve_routing_instance, RoutingSampler, CPU_ROUTING_IDENTITY,
+    ROUTING_SOLVER_ID,
+};
 pub use flatiron::{sample_ising_flatiron, FlatironConfig};
 pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
 pub use gibbs_parallel::{ConfigError, GibbsConfig, GibbsParallelism};
@@ -729,6 +733,7 @@ mod tests {
             CPU_FLOW_IDENTITY,
             CPU_TILE_WORM_IDENTITY,
             CPU_GADGET_REPAIR_IDENTITY,
+            CPU_ROUTING_IDENTITY,
         ];
         let linear = quip_solver_core::LINEAR_SCHEDULE_FEATURE;
         for id in &ladder {
