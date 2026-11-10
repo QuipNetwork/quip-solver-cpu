@@ -31,6 +31,7 @@ pub mod sb_sbqa;
 pub mod sb_tesb;
 mod spin_barrier;
 
+pub use families::ice_sat_sampler::{IceSatSampler, CPU_ICE_SAT_IDENTITY, ICE_SAT_SOLVER_ID};
 pub use families::otsuka_sampler::{OtsukaSampler, CPU_OTSUKA_IDENTITY, OTSUKA_SOLVER_ID};
 pub use flatiron::{sample_ising_flatiron, FlatironConfig};
 pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
@@ -394,11 +395,31 @@ fn parse_num_cpus(backend_toml: &str) -> Result<Option<usize>, NumCpusError> {
     let cfg: CpuBackendConfig =
         toml::from_str(backend_toml).map_err(|_| NumCpusError::InvalidToml)?;
     quip_solver_core::config::warn_unknown_fields("cpu", cfg.unknown.keys());
-    match cfg.num_cpus {
+    check_num_cpus(cfg.num_cpus)
+}
+
+/// Validate a `num_cpus` value read from `backend_toml`.
+pub(crate) fn check_num_cpus(value: Option<i64>) -> Result<Option<usize>, NumCpusError> {
+    match value {
         None => Ok(None),
         Some(n) if n <= 0 => Err(NumCpusError::NonPositive { requested: n }),
         Some(n) => Ok(Some(usize::try_from(n).unwrap_or(usize::MAX))),
     }
+}
+
+/// Store a validated `num_cpus`, clamped to host parallelism.
+pub(crate) fn store_num_cpus(cell: &AtomicUsize, requested: usize) {
+    let available = host_parallelism();
+    let budget = resolve_core_budget(requested, available);
+    if budget < requested {
+        tracing::debug!(
+            requested,
+            available,
+            budget,
+            "num_cpus exceeds host parallelism; clamped"
+        );
+    }
+    cell.store(budget, Ordering::Release);
 }
 
 /// CPU sampler backend. No device, no governor, uncapped reads.
@@ -471,20 +492,9 @@ pub(crate) fn core_budget(cell: &AtomicUsize) -> usize {
 /// operator's core budget and oversubscribes the host, so each `Sampler` impl
 /// in this crate must call it from `apply_config`.
 pub(crate) fn apply_num_cpus(cell: &AtomicUsize, backend_toml: &str) -> Result<(), NumCpusError> {
-    let Some(requested) = parse_num_cpus(backend_toml)? else {
-        return Ok(());
-    };
-    let available = host_parallelism();
-    let budget = resolve_core_budget(requested, available);
-    if budget < requested {
-        tracing::debug!(
-            requested,
-            available,
-            budget,
-            "num_cpus exceeds host parallelism; clamped"
-        );
+    if let Some(requested) = parse_num_cpus(backend_toml)? {
+        store_num_cpus(cell, requested);
     }
-    cell.store(budget, Ordering::Release);
     Ok(())
 }
 
@@ -683,6 +693,7 @@ mod tests {
             CPU_MFA_IDENTITY,
             CPU_FLATIRON_IDENTITY,
             CPU_OTSUKA_IDENTITY,
+            CPU_ICE_SAT_IDENTITY,
         ];
         let sb = [
             CPU_SB_IDENTITY,
