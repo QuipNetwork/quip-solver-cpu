@@ -32,6 +32,9 @@ pub mod sb_sbqa;
 pub mod sb_tesb;
 mod spin_barrier;
 
+pub use families::dimer_weighted_sampler::{
+    DimerSampler, CPU_DIMER_IDENTITY, DIMER_METHOD, DIMER_SOLVER_ID,
+};
 pub use families::ice_sat_sampler::{IceSatSampler, CPU_ICE_SAT_IDENTITY, ICE_SAT_SOLVER_ID};
 pub use families::otsuka_sampler::{OtsukaSampler, CPU_OTSUKA_IDENTITY, OTSUKA_SOLVER_ID};
 pub use flatiron::{sample_ising_flatiron, FlatironConfig};
@@ -700,6 +703,7 @@ mod tests {
             CPU_FLATIRON_IDENTITY,
             CPU_OTSUKA_IDENTITY,
             CPU_ICE_SAT_IDENTITY,
+            CPU_DIMER_IDENTITY,
         ];
         let sb = [
             CPU_SB_IDENTITY,

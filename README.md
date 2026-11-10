@@ -34,6 +34,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -134,7 +135,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, and `quip-cpu-pairworm` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, and `quip-cpu-dimer` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -245,6 +246,58 @@ QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/pairworm_parity/export.p
 QUIP_PAIRWORM_PARITY=OUT cargo test --release --features experimental \
     --test postprocess_pairs -- --ignored research_parity
 ```
+
+`quip-cpu-dimer` runs the bounded weighted-dimer kernel. Its `solver_id` is
+`quip-cpu-dimer/1` and its algorithm is `weighted-dimer`. It generates and
+accepts `quip/twisted-ice-dimer` revision 1. The claim names the whole
+revision, because the research did not select the weighted kernel for one
+recipe. Every other job, such as a plain Ising job, runs on the SA kernel.
+
+`families::dimer_weighted` ports the research `dimer_weighted.rs` and its
+`ice.rs`. The binary runs the research variant `ice-loop64-weighted`. The
+kernel keeps exact integer milliweights and a cached field for each of 64 read
+lanes. Each sweep does three things. It updates every spin once. It then flips
+each tetrahedron as one block and picks the exact best state of the block. It
+last makes 64 attempts per read to flip an alternating loop or string of the
+ice layer. The kernel ports `ice-loop-weighted` and `ice-defect64-weighted` as
+well, but the binary does not run them. The path-block, contraction, polish,
+and tempering variants of the research are not ported. The fork-only cluster
+moves and wide bond counter of `sa_msc.rs` are not needed, because this kernel
+keeps its own integer fields.
+
+The sampler checks the job before the first sweep and rejects it with
+`Declined` when any check fails. It rejects a job with a field, a coupling that
+is not an exact milliweight, or a total weight over the `i32` safety bound. It
+rejects a tile that is not a four-spin block with six distinct 1000-milli bonds
+forming a local gauge of antiferromagnetic ice. It rejects a spin in more than
+two tiles. It rejects a pair that is not an edge of coupling minus 1000 milli
+between two spins that no other pair uses. A block may have two through eight
+spins. The session refuses charged-ice and field-biased-ice jobs before the
+kernel sees them, because this binary does not accept those families.
+
+The kernel contracts nothing. The sampler rescores every read from the job
+graph, which holds the original coefficients. The random streams are the
+research streams. A stream for each read chunk draws the start states. Salted
+streams draw the single flips, the block flips, and the ice moves. The work is the sweep
+count of the job, so the kernel reads no clock. The log line of each job
+records the declared sweeps and reads next to the measured time and the ice
+move counts.
+
+`tests/dimer_family.rs` checks the states and move counts of nine research runs
+against the kernel, exact small-model energies, and every rejection.
+`research/dimer_parity/export.py vectors` writes
+`tests/fixtures/dimer_weighted_vectors.json` from the research `dimer_bench`.
+The ignored test `research_parity` replays a saved research run of a full model
+with 1785 tiles:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/dimer_parity/export.py research OUT
+QUIP_DIMER_PARITY=OUT cargo test --release --features experimental \
+    --test dimer_family -- --ignored research_parity
+```
+
+`tests/dimer_conformance.rs` runs the family gate and the plain-job
+conformance against the binary.
 
 ## Running
 
