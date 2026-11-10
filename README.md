@@ -32,6 +32,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-flatiron` | belief-propagation tensor network on the problem graph | experimental |
 | `quip-cpu-otsuka` | Otsuka cluster annealing on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
+| `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -132,7 +133,7 @@ the campaign analysis script rather than through this repository.
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
 published from crates.io.
 
-Every binary except `quip-cpu-otsuka` and `quip-cpu-ice-sat` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, and `quip-cpu-greedy` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -176,6 +177,36 @@ other job runs on the SA kernel. `tests/ice_sat.rs` covers
 the encoding exhaustively on small fixtures and the process boundary with fake
 solvers. `tests/ice_sat_conformance.rs` runs the family gate against a real
 Kissat when `QUIP_KISSAT` names one and the test runs with `--ignored`.
+
+`quip-cpu-greedy` is a postprocess. Its `solver_id` is `quip-cpu-greedy/1`
+and its policy is `greedy-nat/1`. It advertises `initial-spins` and accepts
+`quip/twisted-ice-dimer` revision 1 jobs for their structure. It generates no
+family work. `postprocess::greedy` ports the research greedy descent exactly.
+Each supplied state becomes one read. A sweep visits every single flip, then
+every natural move in sorted order, and applies each move that lowers the
+energy. The descent stops after a sweep that applies none. The natural moves
+are every coupled pair and every rigid group. A rigid group is a set of nodes
+that ferromagnetic couplings of strength 0.5 or more join outside the tiles,
+together with the pairs. A twisted-ice-dimer job also adds its pairs and the
+three-node and four-node subsets of its tiles.
+
+A job without initial states descends from random states drawn from its seed.
+The binary then logs a warning, because it should receive only warm jobs.
+Each job logs one line with
+the policy and the move counts by source. The line also records the applied
+moves and the time, and the best energy before and after the descent.
+
+`tests/postprocess_greedy.rs` checks every move delta and every descent of a
+6-node fixture against energies computed from scratch.
+`tests/greedy_conformance.rs` runs the session conformance, which grades the
+warm-start proof. The ignored test `research_parity` compares the final
+states, energies, and applied moves with the research descent:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/greedy_parity/export.py OUT
+QUIP_GREEDY_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_greedy -- --ignored research_parity
+```
 
 ## Running
 

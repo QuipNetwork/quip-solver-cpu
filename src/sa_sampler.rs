@@ -543,7 +543,7 @@ fn score(spins: &[i8], graph: &IsingGraph) -> SamplerResult {
 /// milli value `v`, so this recovers the exact integer and, like the
 /// original, saturates a too-large finite value on the final cast rather than
 /// reporting the non-finite sentinel.
-fn coefficient_milli(c: f64) -> Option<i64> {
+pub(crate) fn coefficient_milli(c: f64) -> Option<i64> {
     if !c.is_finite() {
         return None;
     }
