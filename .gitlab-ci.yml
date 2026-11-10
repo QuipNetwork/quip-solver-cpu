@@ -17,10 +17,27 @@ variables:
 default:
   image: rust:1.97
   tags: [linux, amd64]
+  # A push to a branch cancels the running jobs of the pipeline it supersedes,
+  # so a stack of rebased branches does not queue behind stale work.
+  interruptible: true
 
+# One cache per job, not per branch. The jobs build different trees (the test
+# profile with every feature, the release binaries, an aarch64 cross build, the
+# Python workspace in py/), so a shared key let the last job to finish replace
+# the others' caches. GitLab keeps protected and unprotected caches apart, so
+# main warms its own cache and the feature branches share theirs; a new branch
+# starts warm instead of cold. Cargo rebuilds whatever a branch changed.
+#
+# Only the registry index, the downloaded crate archives and the git database
+# are cached from CARGO_HOME. Cargo unpacks registry/src again from the
+# archives, and leaving it out keeps about 15,000 files out of each archive.
 cache:
-  key: cargo-$CI_COMMIT_REF_SLUG
-  paths: [.cargo/, target/]
+  key: cargo-$CI_JOB_NAME
+  paths:
+    - .cargo/registry/index/
+    - .cargo/registry/cache/
+    - .cargo/git/db/
+    - target/
 
 # Apple Silicon runners (`macos`, `arm64`) are shell executors, so the default
 # `image:` does not apply and the default `before_script` (apt-get) would fail.
@@ -32,8 +49,12 @@ cache:
 .macos:
   tags: [macos, arm64]
   cache:
-    key: cargo-macos-$CI_COMMIT_REF_SLUG
-    paths: [.cargo/, target/]
+    key: cargo-macos-$CI_JOB_NAME
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - target/
   before_script:
     # `--no-modify-path` keeps rustup-init from appending `source $CARGO_HOME/env`
     # to the runner's shell profile. `CARGO_HOME` is inside the build directory,
@@ -115,9 +136,23 @@ test:
 # The rust image is bookworm, whose python3 is 3.11, the binding's floor.
 test-py:
   stage: test
+  variables:
+    PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  # py/ is its own workspace, so its build tree is py/target, not target/.
+  cache:
+    key: cargo-$CI_JOB_NAME
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - py/target/
+      - .cache/pip/
   script:
     - rustup component add clippy rustfmt
-    - apt-get update -qq && apt-get install -y --no-install-recommends python3 python3-venv python3-pip
+    # --force-unsafe-io skips dpkg's fsync after each unpacked file. The
+    # container is discarded after the job, and on a busy runner disk the
+    # fsyncs made this ten-megabyte install take eight minutes.
+    - apt-get update -qq && apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-unsafe-io python3 python3-venv python3-pip
     - python3 -m venv py/.venv
     - py/.venv/bin/pip install -q "maturin>=1,<2" numpy pytest
     - cd py
@@ -128,6 +163,9 @@ test-py:
 
 .build:
   stage: build
+  # The build jobs do not use anything the test stage produces, so they start
+  # with it instead of after it. A failing test still fails the pipeline.
+  needs: []
   artifacts:
     paths: [dist/, bins.tsv]
     expire_in: 1 week
@@ -184,6 +222,7 @@ build-darwin-arm64:
 upload:
   stage: release
   image: curlimages/curl:latest
+  interruptible: false
   rules:
     - if: $CI_COMMIT_TAG
   before_script: []
@@ -225,6 +264,7 @@ upload:
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
+  interruptible: false
   rules:
     - if: $CI_COMMIT_TAG
   # `needs` narrows artifact download to the jobs named here, so the job that

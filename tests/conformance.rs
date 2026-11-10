@@ -192,7 +192,6 @@ async fn quip_cpu_flatiron_passes_solve_conformance() {
 #[test]
 fn capabilities_advertise_the_schedule_feature_and_limits() {
     let bins = ["quip-cpu-sa", "quip-cpu-gibbs", "quip-cpu-sb"];
-    ensure_built(&bins);
     for bin in bins {
         let out = Command::new(profile_bin(bin))
             .arg("--capabilities")
@@ -214,7 +213,9 @@ fn capabilities_advertise_the_schedule_feature_and_limits() {
     }
 }
 
-/// Cross-package binary path (deps/ → profile/ → bin).
+/// Cross-package binary path (deps/ → profile/ → bin). Cargo builds every
+/// binary target of the package before it runs an integration test, in the
+/// same profile and with the same features as the test.
 fn profile_bin(name: &str) -> String {
     let name = if cfg!(windows) {
         format!("{name}.exe")
@@ -228,37 +229,8 @@ fn profile_bin(name: &str) -> String {
     p.to_string_lossy().into_owned()
 }
 
-/// Build the crate and assert the named binaries landed in the profile
-/// directory. `features` is forwarded to `cargo build --features`; the
-/// experimental SB and tensor-network binaries need it, the production ones do
-/// not.
-fn ensure_built_with(package_bins: &[&str], features: &[&str]) {
-    let mut args: Vec<String> = vec!["build".into(), "-p".into(), "quip-solver-cpu".into()];
-    if !features.is_empty() {
-        args.push("--features".into());
-        args.push(features.join(","));
-    }
-    let status = Command::new(env!("CARGO"))
-        .args(&args)
-        .status()
-        .expect("cargo build quip-solver-cpu");
-    assert!(status.success(), "failed to build quip-solver-cpu");
-    for b in package_bins {
-        assert!(
-            std::path::Path::new(&profile_bin(b)).exists(),
-            "missing binary {b} at {}",
-            profile_bin(b)
-        );
-    }
-}
-
-fn ensure_built(package_bins: &[&str]) {
-    ensure_built_with(package_bins, &[]);
-}
-
 #[tokio::test]
 async fn quip_cpu_sa_passes_conformance() {
-    ensure_built(&["quip-cpu-sa"]);
     let miner = profile_bin("quip-cpu-sa");
     let socket = format!(
         "/tmp/quip-cpu-sa-conf-{}-{}.sock",
@@ -320,7 +292,6 @@ async fn quip_cpu_sa_passes_conformance() {
 
 #[tokio::test]
 async fn quip_cpu_gibbs_passes_conformance() {
-    ensure_built(&["quip-cpu-gibbs"]);
     let miner = profile_bin("quip-cpu-gibbs");
     let socket = format!(
         "/tmp/quip-cpu-gibbs-conf-{}-{}.sock",
@@ -354,7 +325,6 @@ async fn quip_cpu_gibbs_passes_conformance() {
 
 #[tokio::test]
 async fn quip_cpu_sb_passes_conformance() {
-    ensure_built(&["quip-cpu-sb"]);
     let miner = profile_bin("quip-cpu-sb");
     let socket = format!(
         "/tmp/quip-cpu-sb-conf-{}-{}.sock",
@@ -388,8 +358,6 @@ async fn quip_cpu_sb_passes_conformance() {
 
 #[test]
 fn capabilities_and_version_and_check() {
-    ensure_built(&["quip-cpu-sa", "quip-cpu-gibbs", "quip-cpu-sb"]);
-
     for (bin, algo) in [
         ("quip-cpu-sa", "sa"),
         ("quip-cpu-gibbs", "gibbs"),
@@ -424,7 +392,6 @@ fn capabilities_and_version_and_check() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_bsb_passes_conformance() {
-    ensure_built_with(&["quip-cpu-bsb"], &["experimental"]);
     let miner = profile_bin("quip-cpu-bsb");
     let socket = format!(
         "/tmp/quip-cpu-bsb-conf-{}-{}.sock",
@@ -512,9 +479,6 @@ const EXPERIMENTAL_BINS: &[(&str, &str)] = &[
 #[cfg(feature = "experimental")]
 #[test]
 fn experimental_capabilities_and_version_and_check() {
-    let bins: Vec<&str> = EXPERIMENTAL_BINS.iter().map(|&(bin, _)| bin).collect();
-    ensure_built_with(&bins, &["experimental"]);
-
     for &(bin, algo) in EXPERIMENTAL_BINS {
         let path = profile_bin(bin);
 
@@ -545,7 +509,6 @@ fn experimental_capabilities_and_version_and_check() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_hdsb_passes_conformance() {
-    ensure_built_with(&["quip-cpu-hdsb"], &["experimental"]);
     let miner = profile_bin("quip-cpu-hdsb");
     let socket = format!(
         "/tmp/quip-cpu-hdsb-conf-{}-{}.sock",
@@ -612,7 +575,6 @@ async fn quip_cpu_hdsb_passes_conformance() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_hbsb_passes_conformance() {
-    ensure_built_with(&["quip-cpu-hbsb"], &["experimental"]);
     let miner = profile_bin("quip-cpu-hbsb");
     let socket = format!(
         "/tmp/quip-cpu-hbsb-conf-{}-{}.sock",
@@ -678,7 +640,6 @@ async fn quip_cpu_hbsb_passes_conformance() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_mps_passes_conformance() {
-    ensure_built_with(&["quip-cpu-mps"], &["experimental"]);
     let miner = profile_bin("quip-cpu-mps");
     let socket = format!(
         "/tmp/quip-cpu-mps-conf-{}-{}.sock",
@@ -717,7 +678,6 @@ async fn quip_cpu_mps_passes_conformance() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_flatiron_passes_conformance() {
-    ensure_built_with(&["quip-cpu-flatiron"], &["experimental"]);
     let miner = profile_bin("quip-cpu-flatiron");
     let socket = format!(
         "/tmp/quip-cpu-flatiron-conf-{}-{}.sock",
@@ -755,7 +715,6 @@ async fn quip_cpu_flatiron_passes_conformance() {
 #[cfg(feature = "experimental")]
 #[tokio::test]
 async fn quip_cpu_mfa_passes_conformance() {
-    ensure_built_with(&["quip-cpu-mfa"], &["experimental"]);
     let miner = profile_bin("quip-cpu-mfa");
     let socket = format!(
         "/tmp/quip-cpu-mfa-conf-{}-{}.sock",
