@@ -14,7 +14,10 @@
 //! physical claim, and every family job is then declined, because the table
 //! of revision 1 has the oracle calibration.
 //!
-//! Every other job runs the `greedy-nat/1` descent of `quip-cpu-greedy`.
+//! Every other job is declined with `NO_SOLUTION`, as `quip-cpu-flow` and
+//! `quip-cpu-flow-loops` do. A plain model, and every family the binary does
+//! not list, reach the sampler with no D-static structure, and a fallback
+//! would serve another family's job without a sign in the result.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicUsize;
@@ -30,7 +33,7 @@ use quip_solver_core::{
 };
 
 use super::dipolar_search::{DipolarError, Evidence, Problem, RunOutcome, Work};
-use crate::postprocess::sampler::{greedy_reads, into_result, job_structure, Failure};
+use crate::postprocess::sampler::{into_result, Failure};
 use crate::{check_sample_size, run_job_pump, NumCpusError, StreamKernelError};
 
 /// The stable id of this binary (FAM-60).
@@ -97,7 +100,7 @@ fn mode_of(config: &DipolarToml) -> Result<Mode, String> {
     })
 }
 
-/// The D-static search, with the greedy descent for other jobs.
+/// The D-static search.
 #[derive(Debug)]
 pub struct DipolarSampler {
     /// 0 means use host parallelism.
@@ -140,8 +143,12 @@ fn is_defects(family: &FamilyContext) -> bool {
     family.family_id() == DEFECTS_V1.family_id && family.revision() == DEFECTS_V1.revision
 }
 
-/// Run one job: the dipolar search for a D-static job, the greedy descent
-/// for every other job.
+/// The detail of a declined job without the D-static family.
+const NOT_A_DEFECTS_JOB: &str = "quip-cpu-dipolar solves only validated quip/defects-static@1 \
+     jobs; other families and plain models have no D-static structure";
+
+/// Run one job: the dipolar search for a D-static job. Every other job is
+/// declined.
 fn job_reads(
     graph: &IsingGraph,
     params: &SampleParams,
@@ -160,7 +167,15 @@ fn job_reads(
             mode,
             cancel,
         ),
-        None => greedy_reads(graph, params, starts, &job_structure(graph, family), cancel),
+        None => {
+            tracing::warn!(
+                detail = NOT_A_DEFECTS_JOB,
+                "quip-cpu-dipolar declines the job"
+            );
+            Err(Failure::Rejected(SampleError::Declined(
+                NOT_A_DEFECTS_JOB.to_owned(),
+            )))
+        }
     }
 }
 
@@ -526,14 +541,16 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_job_runs_the_greedy_descent() {
+    fn a_plain_job_is_declined() {
         let n = 8;
         let graph = IsingGraph::new(
             vec![0.0; n],
             vec![-1.0; n],
             (0..n).map(|i| (i, (i + 1) % n)).collect(),
         );
-        let reads = DipolarSampler::new().sample(&graph, &params(3, 5)).unwrap();
-        assert_eq!(reads.len(), 3, "one descended read per random state");
+        assert!(matches!(
+            DipolarSampler::new().sample(&graph, &params(3, 5)),
+            Err(SampleError::Declined(_))
+        ));
     }
 }

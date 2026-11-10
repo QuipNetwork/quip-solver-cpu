@@ -40,7 +40,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
 | `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job declined | experimental |
-| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, greedy descent on every other job | experimental |
+| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, declines every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -572,8 +572,9 @@ runs the family gate.
 `quip-cpu-dipolar/1`, its algorithm is `dipolar`, and its policy is
 `dipolar-strings/1`. It generates and accepts `quip/defects-static`
 revision 1, which allows the sides 2 and 3. The tests cover those two sides.
-The binary advertises `initial-spins`. Every other job runs the
-`greedy-nat/1` descent.
+The binary advertises `initial-spins`. It declines every other job with
+`NO_SOLUTION`, as `quip-cpu-flow` does, because a plain model and every
+unlisted family reach it with no D-static structure.
 
 `families::dipolar_search` is a new search. No research solver exists for this
 family. Each move flips a list of link ids. The move is either a loop, which
