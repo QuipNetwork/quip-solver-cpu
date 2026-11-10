@@ -59,7 +59,7 @@
 //! field is recomputed on every attempt. At degree 20 that tax is larger than
 //! it was on the degree-6 Chimera graphs of the paper.
 //!
-//! # Randomness: `per-lane-threshold-planes-v1`
+//! # Randomness: `per-lane-threshold-planes-v2`
 //!
 //! Each lane reads its own geometric threshold `M`. A row entry holds six bit
 //! planes, and bit `r` of plane `k` is bit `k` of lane `r`'s threshold. One row
@@ -70,13 +70,19 @@
 //! bit-sliced add, a shift and a bit-sliced comparison. The row costs
 //! `LANE_ROW × 64` draws per rung. This schedule differs from CUDA MSA, which
 //! still shares one threshold per word.
+//!
+//! Each word also leaves one node out of every sweep but the last. The node
+//! comes from the high bits of the hash that supplies the word's row offset
+//! ([`word_shift`]). Without it, the domain walls of a zero-field chain move
+//! in step and same-sublattice walls never meet (QUI-1980). CUDA MSA has no
+//! such node.
 
 use quip_solver_core::{CancelToken, SampleParams};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::coloring::Coloring;
 use crate::sa_int::{draw_threshold, fill_cuts, IntGraph};
-use crate::sampler_core::{sit_out_from_draw, SampleCancelled};
+use crate::sampler_core::{sit_out_from_draw, SampleCancelled, NO_SIT_OUT};
 
 /// Replicas advanced by one word update.
 pub(crate) const LANES: usize = u64::BITS as usize;
@@ -256,7 +262,7 @@ pub(crate) fn bond_counts(graph: &IntGraph) -> Option<Vec<u8>> {
 /// Advance all replica words together. One threshold row is redrawn per beta
 /// and shared across words. Colors run in sequence, with a per-word offset.
 ///
-/// Each word leaves one node out of every sweep ([`word_shift`]). The order
+/// Each word leaves one node out of every sweep but the last ([`word_shift`]). The order
 /// inside a color does not matter and flat moves are always accepted, so with
 /// every node updated a zero-field chain's domain walls all advance two sites
 /// per sweep and walls on the same sublattice never meet. A wall that reaches
@@ -289,10 +295,14 @@ pub(crate) fn anneal_words(
                     return Err(SampleCancelled);
                 }
             }
+            // The last sweep of the anneal leaves no node out, so every node
+            // is settled at the coldest rung.
+            let last_sweep = beta_idx + 1 == betas.len() && sweep + 1 == sweeps_per_beta;
             for class in colors.classes() {
                 for (word, state) in states.iter_mut().enumerate() {
-                    let (off, skip) =
+                    let (off, drawn) =
                         word_shift(params.seed, word, beta_idx, sweep, graph.num_nodes());
+                    let skip = if last_sweep { NO_SIT_OUT } else { drawn };
                     // Nodes of one color do not interact, so putting the word
                     // back after the color is the same as never updating the
                     // node, and the sweep loop carries no per-node comparison.

@@ -1,7 +1,7 @@
 //! Zero-field conformance: the annealing binaries solve a model with no linear
 //! field through `--solve`.
 //!
-//! The model is a 16-spin antiferromagnetic ring. Its two ground states have
+//! The main model is a 16-spin antiferromagnetic ring. Its two ground states have
 //! every bond satisfied, at energy `-16 * |J|`. A kernel that visits nodes in
 //! one fixed order and accepts every flat move only shifts the ring's domain
 //! walls in step, so its reads keep the energy of their random start.
@@ -143,15 +143,86 @@ fn quip_cpu_sa_still_solves_the_ring_with_one_field() {
     assert_eq!(got.iter().min(), Some(&-17_000_000), "energies {got:?}");
 }
 
-/// The same seed gives the same samples on the zero-field ring.
-#[test]
-fn quip_cpu_sa_repeats_its_samples_on_the_zero_field_ring() {
-    let problem = ring(1000.0, 0.0, None);
+/// Assert `bin` gives the same samples for the same seed, on the unit ring
+/// that selects its own kernel.
+fn assert_repeats_its_samples(bin: &str) {
+    let problem = ring(1.0, 0.0, None);
     let spins =
         |reads: &[Value]| -> Vec<Value> { reads.iter().map(|r| r["spins"].clone()).collect() };
-    let first = solve(env!("CARGO_BIN_EXE_quip-cpu-sa"), &problem);
-    let second = solve(env!("CARGO_BIN_EXE_quip-cpu-sa"), &problem);
-    assert_eq!(spins(&first), spins(&second));
+    assert_eq!(
+        spins(&solve(bin, &problem)),
+        spins(&solve(bin, &problem)),
+        "{bin}"
+    );
+}
+
+#[test]
+fn quip_cpu_sa_repeats_its_samples_on_the_zero_field_ring() {
+    assert_repeats_its_samples(env!("CARGO_BIN_EXE_quip-cpu-sa"));
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_fsa_repeats_its_samples_on_the_zero_field_ring() {
+    assert_repeats_its_samples(env!("CARGO_BIN_EXE_quip-cpu-fsa"));
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_msa_repeats_its_samples_on_the_zero_field_ring() {
+    assert_repeats_its_samples(env!("CARGO_BIN_EXE_quip-cpu-msa"));
+}
+
+/// Side of the square lattice in the Max-Cut case.
+const SIDE: usize = 6;
+
+/// Max-Cut on a 6 by 6 periodic square lattice: antiferromagnetic unit
+/// couplings and no fields. The lattice is bipartite, so the best cut takes
+/// all 72 edges, at energy -72.
+fn max_cut_torus() -> Value {
+    let node = |x: usize, y: usize| (x % SIDE) * SIDE + (y % SIDE);
+    let mut edges = Vec::new();
+    for x in 0..SIDE {
+        for y in 0..SIDE {
+            for other in [node(x + 1, y), node(x, y + 1)] {
+                let here = node(x, y);
+                edges.push([here.min(other), here.max(other)]);
+            }
+        }
+    }
+    json!({
+        "h": vec![0.0; SIDE * SIDE],
+        "j": vec![1.0; edges.len()],
+        "edges": edges,
+        "num_reads": READS,
+        "num_sweeps": 1000,
+        "sweeps_per_beta": 1,
+        "beta_range": null,
+        "seed": 7,
+    })
+}
+
+/// Assert `bin` finds the full cut of the lattice on at least one read.
+fn assert_solves_max_cut_torus(bin: &str) {
+    let got = energies(&solve(bin, &max_cut_torus()));
+    assert_eq!(got.iter().min(), Some(&-72_000), "{bin}: energies {got:?}");
+}
+
+#[test]
+fn quip_cpu_sa_solves_zero_field_max_cut_on_a_lattice() {
+    assert_solves_max_cut_torus(env!("CARGO_BIN_EXE_quip-cpu-sa"));
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_fsa_solves_zero_field_max_cut_on_a_lattice() {
+    assert_solves_max_cut_torus(env!("CARGO_BIN_EXE_quip-cpu-fsa"));
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_msa_solves_zero_field_max_cut_on_a_lattice() {
+    assert_solves_max_cut_torus(env!("CARGO_BIN_EXE_quip-cpu-msa"));
 }
 
 /// A one-node model has nothing to anneal around: every read takes the spin
@@ -171,4 +242,49 @@ fn quip_cpu_msa_solves_a_single_node_with_a_field() {
     });
     let got = energies(&solve(env!("CARGO_BIN_EXE_quip-cpu-msa"), &problem));
     assert_eq!(got, vec![-1000; READS]);
+}
+
+/// Two unconnected nodes, each with a field, annealed for one cold sweep.
+fn two_fields_one_sweep() -> Value {
+    json!({
+        "h": [1.0, 1.0],
+        "j": [],
+        "edges": [],
+        "num_reads": READS,
+        "num_sweeps": 1,
+        "sweeps_per_beta": 1,
+        "beta_range": [10.0, 10.0],
+        "seed": 7,
+    })
+}
+
+/// The last sweep of a read visits every node, so a one-sweep anneal still
+/// settles each node against its field.
+#[test]
+fn quip_cpu_sa_visits_every_node_in_a_one_sweep_anneal() {
+    let got = energies(&solve(
+        env!("CARGO_BIN_EXE_quip-cpu-sa"),
+        &two_fields_one_sweep(),
+    ));
+    assert_eq!(got, vec![-2000; READS]);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_fsa_visits_every_node_in_a_one_sweep_anneal() {
+    let got = energies(&solve(
+        env!("CARGO_BIN_EXE_quip-cpu-fsa"),
+        &two_fields_one_sweep(),
+    ));
+    assert_eq!(got, vec![-2000; READS]);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn quip_cpu_msa_visits_every_node_in_a_one_sweep_anneal() {
+    let got = energies(&solve(
+        env!("CARGO_BIN_EXE_quip-cpu-msa"),
+        &two_fields_one_sweep(),
+    ));
+    assert_eq!(got, vec![-2000; READS]);
 }

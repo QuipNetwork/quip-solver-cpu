@@ -42,8 +42,10 @@ Every annealing kernel accepts a flat move, one with `ΔE = 0`, without a draw.
 On a model with no linear field, a sweep that visits the nodes the same way
 every time then moves every domain wall of a chain in step, and walls that move
 in step never meet. The read keeps the energy of its random start at any
-temperature. Every sweep therefore leaves one node out, chosen afresh each
-sweep. A wall that reaches that node waits, and the wall behind it catches up.
+temperature. Every sweep but the last of a read therefore leaves one node out,
+chosen afresh each sweep. A wall that reaches that node waits, and the wall
+behind it catches up. The last sweep visits every node, so each node is settled
+at the coldest rung and a one-sweep anneal is a full sweep.
 
 - SA, on both the `f64` and the integer arithmetic, draws the node from the
   read's random stream. This is one draw per sweep.
@@ -54,7 +56,8 @@ sweep. A wall that reaches that node waits, and the wall behind it catches up.
 
 No kernel rejects a flat move, and the order of a sweep is unchanged. A model
 of one node leaves none out. `tests/zero_field_annealing.rs` runs a 16-spin
-zero-field ring through `--solve` on all three binaries.
+zero-field ring and a zero-field Max-Cut lattice through `--solve` on all
+three binaries.
 
 ## Per-lane thresholds (QUI-1596)
 
