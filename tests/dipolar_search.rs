@@ -155,17 +155,6 @@ fn flip(problem: &Problem, spins: &[i8], links: &[u32]) -> Vec<i8> {
     after
 }
 
-/// Whether two states agree on every link at an obstacle.
-fn same_at_obstacles(problem: &Problem, a: &[i8], b: &[i8]) -> bool {
-    let request = problem.request();
-    request.obstacles.iter().all(|&v| {
-        problem.lattice().incident(v).iter().all(|&(e, _)| {
-            let p = request.positions[e as usize] as usize;
-            a[p] == b[p]
-        })
-    })
-}
-
 /// Every one of the 4096 states of each L = 2 case agrees with the family:
 /// the violations with the observables and the feasibility hook, the energy
 /// with the instance, and the physical energy with the observables. Every
@@ -218,7 +207,6 @@ fn all_4096_l2_states_match_the_oracle() {
                 assert!(problem.check_move(&spins, &links).is_ok(), "{links:?}");
                 let after = flip(&problem, &spins, &links);
                 assert_eq!(problem.violations(&after).unwrap(), violations);
-                assert!(same_at_obstacles(&problem, &spins, &after));
                 let mut next = current.clone();
                 let delta = next.apply(&problem, &links).unwrap();
                 let full = problem.energy(&after).unwrap();
@@ -232,14 +220,11 @@ fn all_4096_l2_states_match_the_oracle() {
     assert!(proposals > 10_000, "{proposals} proposals checked");
 }
 
-/// The lowest energy over the feasible states that keep the obstacle links
-/// of `start`, by enumeration.
-fn oracle_minimum(problem: &Problem, start: &[i8]) -> i64 {
+/// The lowest energy over every feasible state, by enumeration.
+fn oracle_minimum(problem: &Problem) -> i64 {
     (0..4096u32)
         .map(|bits| state(bits, 12))
-        .filter(|s| {
-            problem.violations(s).unwrap().feasible() && same_at_obstacles(problem, s, start)
-        })
+        .filter(|s| problem.violations(s).unwrap().feasible())
         .map(|s| problem.energy(&s).unwrap())
         .min()
         .expect("a feasible state")
@@ -249,8 +234,7 @@ fn oracle_minimum(problem: &Problem, start: &[i8]) -> i64 {
 fn the_search_reaches_the_l2_oracle_minimum() {
     for (k, case) in L2_CASES.iter().enumerate() {
         let (_, problem) = case.problem(u8::try_from(k).unwrap());
-        let start = problem.start_state().unwrap();
-        let want = oracle_minimum(&problem, &start);
+        let want = oracle_minimum(&problem);
         let run = problem
             .run(None, 4, Work::Fixed { proposals: 2000 }, 2032, None)
             .unwrap();
@@ -259,7 +243,6 @@ fn the_search_reaches_the_l2_oracle_minimum() {
         assert_eq!(run.reads.len(), 4);
         for read in &run.reads {
             assert!(read.feasible);
-            assert!(same_at_obstacles(&problem, &read.spins, &start));
             assert_eq!(read.counts.proposed, 2000);
         }
         let best = run.reads.iter().map(|r| r.energy).min().unwrap();
@@ -340,12 +323,11 @@ fn analytic_charged_fixtures_match_the_oracle() {
             }
         }
         assert!(max_feasible < min_infeasible, "label {label}");
-        let start = problem.start_state().unwrap();
         let run = problem
             .run(None, 4, Work::Fixed { proposals: 2000 }, 9, None)
             .unwrap();
         let best = run.reads.iter().map(|r| r.energy).min().unwrap();
-        assert_eq!(best, oracle_minimum(&problem, &start), "label {label}");
+        assert_eq!(best, oracle_minimum(&problem), "label {label}");
     }
 }
 
@@ -591,8 +573,8 @@ fn invalid_moves_and_routes_fail_direct_checking() {
         .unwrap();
     assert_eq!(fault(&[first, away]), Some(MoveFault::NotAdjacent(away)));
 
-    // A link out of the obstacle, and a link from a labeled vertex to the
-    // border.
+    // A link from a labeled vertex to the border. The obstacle has the label
+    // 0, so a link out of it changes its charge too.
     let obstacle = request.obstacles[0];
     let out_of_obstacle = problem
         .lattice()
@@ -603,7 +585,7 @@ fn invalid_moves_and_routes_fail_direct_checking() {
         .unwrap();
     assert_eq!(
         fault(&[out_of_obstacle]),
-        Some(MoveFault::Obstacle(obstacle))
+        Some(MoveFault::ChargeChanged(obstacle))
     );
     let labeled_to_border = (0..problem.lattice().link_count()).find_map(|e| {
         let (a, b) = ends(&problem, &spins, e);
@@ -815,7 +797,36 @@ fn the_fixed_seed_output_is_golden() {
 }
 
 const GOLDEN: [(i64, &str); 3] = [
-    (-675_648, "--+---+++---++++++-+++++"),
-    (-675_648, "--+---+++---++++++-+++++"),
-    (-675_648, "--+---+++---++++++-+++++"),
+    (-681_648, "--+---------++++++-+++++"),
+    (-681_648, "--+---------++++++-+++++"),
+    (-681_648, "--+---------++++++-+++++"),
 ];
+
+/// A move may pass through an obstacle. The obstacle has the label 0, and a
+/// loop or a string keeps the charge of every vertex it passes through, so
+/// such a move keeps every label and pin. Only a route witness of the family
+/// must avoid obstacles.
+#[test]
+fn moves_may_pass_through_an_obstacle() {
+    let (_, problem) = L3.problem(1);
+    let obstacle = problem.request().obstacles[0];
+    let mut current = State::new(&problem, &problem.start_state().unwrap()).unwrap();
+    let mut rng = SmallRng::seed_from_u64(2032);
+    let mut through = 0;
+    for _ in 0..5000 {
+        let Some(links) = problem.propose(&current, &mut rng) else {
+            continue;
+        };
+        let spins = current.spins().to_vec();
+        let visits = links.iter().any(|&e| {
+            let (a, b) = ends(&problem, &spins, e);
+            a == obstacle || b == obstacle
+        });
+        assert!(problem.check_move(&spins, &links).is_ok(), "{links:?}");
+        let before = problem.violations(&spins).unwrap();
+        current.apply(&problem, &links).unwrap();
+        assert_eq!(problem.violations(current.spins()).unwrap(), before);
+        through += usize::from(visits);
+    }
+    assert!(through > 0, "no proposal passed through the obstacle");
+}

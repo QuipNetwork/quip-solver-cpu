@@ -14,9 +14,11 @@
 //!   only free vertices change charge.
 //!
 //! A move is a list of canonical link ids of the open lattice. No move flips a
-//! pinned link or enters an obstacle, so the defect strings of a state never
-//! cross a prohibited region. [`Problem::check_move`] checks every move
-//! directly before the search scores it.
+//! pinned link. A move may pass through an obstacle: an obstacle is a vertex
+//! with the label 0, and a loop or a string keeps the charge of every vertex it
+//! passes through. Obstacles constrain only the route evidence of the family.
+//! [`Problem::check_move`] checks every move directly before the search scores
+//! it.
 //!
 //! The search keeps the local field of every node and updates the full score
 //! of the instance with checked integer arithmetic. At the end of each read it
@@ -183,8 +185,6 @@ pub enum MoveFault {
     NotDirected(u32),
     /// The walk visits a vertex twice before it closes.
     RepeatedVertex(u32),
-    /// The walk enters an obstacle.
-    Obstacle(u32),
     /// The walk ends on a labeled vertex, so it changes that charge.
     ChargeChanged(u32),
 }
@@ -406,11 +406,9 @@ fn share_vertex(lattice: &SquareLattice, i: u32, j: u32) -> Option<bool> {
 pub struct Problem {
     lattice: SquareLattice,
     request: Request,
-    /// Per vertex.
-    obstacle: Vec<bool>,
     /// Per link.
     pinned: Vec<bool>,
-    /// The vertices a walk may start from: every vertex but the obstacles.
+    /// The vertices a walk may start from: every vertex.
     starts: Vec<u32>,
     h: Vec<i64>,
     edges: Vec<(u32, u32)>,
@@ -470,13 +468,11 @@ impl Problem {
         if !ascending(&request.obstacles) {
             return refuse("the obstacles are not strictly ascending");
         }
-        let mut obstacle = vec![false; vertices as usize];
         for &v in &request.obstacles {
             let zero = request.labels.get(v as usize) == Some(&Some(0));
             if v >= vertices || on_border(request.side, v) || !zero {
                 return refuse("an obstacle is not an interior vertex with the label 0");
             }
-            obstacle[v as usize] = true;
         }
         if !ascending(&request.pins) {
             return refuse("the pins are not strictly ascending");
@@ -527,7 +523,7 @@ impl Problem {
             neighbours[b as usize].push((a as usize, j));
         }
         let beta = schedule(&kept, &request);
-        let starts = (0..vertices).filter(|&v| !obstacle[v as usize]).collect();
+        let starts = (0..vertices).collect();
         Ok(Self {
             starts,
             status: physical_status(&table),
@@ -535,7 +531,6 @@ impl Problem {
             commitment: table.commitment(),
             lattice,
             request,
-            obstacle,
             pinned,
             h: built.h,
             edges: built.edges,
@@ -809,7 +804,7 @@ impl Problem {
     /// Check a move against a node state. A move is a list of link ids that
     /// forms a directed walk in the current orientation. It must be a simple
     /// directed cycle, or a simple directed path between two free vertices.
-    /// It may not flip a pin or enter an obstacle.
+    /// It may not flip a pin.
     ///
     /// # Errors
     ///
@@ -857,9 +852,6 @@ impl Problem {
                 return Err(MoveFault::RepeatedVertex(at));
             }
             visited[at as usize] = true;
-            if self.obstacle[at as usize] {
-                return Err(MoveFault::Obstacle(at));
-            }
             at = to;
         }
         if at == start {
@@ -867,9 +859,6 @@ impl Problem {
         }
         if visited[at as usize] {
             return Err(MoveFault::RepeatedVertex(at));
-        }
-        if self.obstacle[at as usize] {
-            return Err(MoveFault::Obstacle(at));
         }
         for v in [start, at] {
             if !self.free(v) {
@@ -884,9 +873,9 @@ impl Problem {
         self.request.positions[e as usize] as usize
     }
 
-    /// Propose a bounded move: a random directed walk from a random vertex
-    /// that is not an obstacle. The walk never takes a pinned link or enters
-    /// an obstacle. It stops at the first closed cycle, or at the first
+    /// Propose a bounded move: a random directed walk from a random vertex.
+    /// The walk never takes a pinned link. It stops at the first closed cycle,
+    /// or at the first
     /// directed path between two free vertices, and it gives up after as many
     /// steps as the lattice has links or at a vertex with no way out.
     pub fn propose(&self, state: &State, rng: &mut SmallRng) -> Option<Vec<u32>> {
@@ -906,7 +895,7 @@ impl Problem {
             for &(e, _) in self.lattice.incident(u) {
                 let s = state.spins[self.node(e)];
                 let (from, to) = self.oriented(e, s)?;
-                if from == u && !self.pinned[e as usize] && !self.obstacle[to as usize] {
+                if from == u && !self.pinned[e as usize] {
                     out.push((e, to));
                 }
             }
@@ -932,13 +921,12 @@ impl Problem {
 
     /// The shortest directed path of non-pinned links from `v`, forward
     /// along out-links or backward along in-links, to a vertex that `target`
-    /// accepts. An obstacle is a transit vertex only when `obstacles` is set.
+    /// accepts.
     fn bfs(
         &self,
         links: &[i8],
         v: u32,
         forward: bool,
-        obstacles: bool,
         target: &dyn Fn(u32) -> bool,
     ) -> Option<Vec<u32>> {
         let vertices = self.lattice.vertex_count() as usize;
@@ -957,7 +945,7 @@ impl Problem {
                     (false, false) if to == u => from,
                     _ => continue,
                 };
-                if seen[next as usize] || (self.obstacle[next as usize] && !obstacles) {
+                if seen[next as usize] {
                     continue;
                 }
                 seen[next as usize] = true;
@@ -979,8 +967,8 @@ impl Problem {
 
     /// A feasible state near `spins`: every pin is set to `+1`, then each
     /// wrong label is fixed by flipping one shortest directed path to a
-    /// vertex with the opposite error, or else to a free vertex. Paths avoid
-    /// obstacles when they can. The result is checked directly.
+    /// vertex with the opposite error, or else to a free vertex. The result
+    /// is checked directly.
     ///
     /// # Errors
     ///
@@ -1007,9 +995,8 @@ impl Problem {
             let opposite = |w: u32| if forward { error(w) > 0 } else { error(w) < 0 };
             let either = |w: u32| opposite(w) || self.free(w);
             let path = self
-                .bfs(&links, v, forward, false, &opposite)
-                .or_else(|| self.bfs(&links, v, forward, false, &either))
-                .or_else(|| self.bfs(&links, v, forward, true, &either));
+                .bfs(&links, v, forward, &opposite)
+                .or_else(|| self.bfs(&links, v, forward, &either));
             let Some(path) = path else {
                 return Err(DipolarError::Infeasible(self.link_violations(&links)));
             };

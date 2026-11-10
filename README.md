@@ -566,18 +566,19 @@ revision 1, which allows the sides 2 and 3. The tests cover those two sides.
 The binary advertises `initial-spins`. Every other job runs the
 `greedy-nat/1` descent.
 
-`families::dipolar_search` is a new search. No research solver exists for
-this family. Each move flips a list of link ids. The move is either a loop,
-which is a directed cycle, or a string, which is a directed path between two
-free boundary vertices. No move flips
-a pinned link or enters an obstacle, so every labeled charge stays the same.
-The search checks each move directly before it scores the move. It keeps the
-local field of each node and updates the score with checked integer
-arithmetic. The Metropolis rule decides on the exact integer change. At the
-end of each read, the search computes the score again from the coefficients.
-It also computes the physical energy from the dipolar table and checks every
-constraint. The sampler then compares the score with the canonical score of
-the job graph. A job fails when any check fails.
+`families::dipolar_search` is a new search. No research solver exists for this
+family. Each move flips a list of link ids. The move is either a loop, which
+is a directed cycle, or a string, which is a directed path between two free
+boundary vertices. No move flips a pinned link, so every labeled charge stays
+the same. A move may pass through an obstacle, because an obstacle is a vertex
+with the label 0. Only a route witness of the family must avoid obstacles. The
+search checks each move directly before it scores the move. It keeps the local
+field of each node and updates the score with checked integer arithmetic. The
+Metropolis rule decides on the exact integer change. At the end of each read,
+the search computes the score again from the coefficients. It also computes
+the physical energy from the dipolar table and checks every constraint. The
+sampler then compares the score with the canonical score of the job graph. A
+job fails when any check fails.
 
 A job without states runs the search mode. Each read starts from the
 reference state, with every link spin `+1`. Paths between opposite labels fix
