@@ -12,6 +12,7 @@
 //! state.
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use quip_protocol::scoring::energy_milli;
 use quip_solver_conformance::families::{export_instances, reference_revision};
@@ -27,7 +28,7 @@ use quip_solver_cpu::families::flow::{
 };
 use quip_solver_cpu::families::flow_loops::{
     score, search, Accepted, LoopError, LoopKernel, LoopOutcome, MoveKind, Score, Stop, Work,
-    FLOW_LOOPS_BUDGET_SECONDS, FLOW_LOOPS_POLICY, ROUNDS,
+    FLOW_LOOPS_DEFAULT_BUDGET_SECONDS, FLOW_LOOPS_POLICY, ROUNDS,
 };
 use serde_json::{json, Value};
 
@@ -37,7 +38,11 @@ const LIVE_TOPOLOGY: &str = "../topologies/zephyr-z12t4-live.bin.gz";
 const SIDE_2: &str = "../topologies/routing-small.bin.gz";
 /// The side-3 reference topology with a permuted node order.
 const SIDE_3: &str = "../topologies/polariton-l3-permuted.bin.gz";
-/// The recorded golden output.
+/// The recorded golden output. The SC-2 golden vectors of quip-solver-core
+/// pin generator outputs from an independent oracle, and have no place for the
+/// seeded output of a solver, so this fixture has its own layout. Each case
+/// names its instance by the SC-2 identity: family, revision, parameter bytes,
+/// nonce, and instance digest.
 const GOLDEN: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/flow_loops_golden.json"
@@ -297,6 +302,9 @@ fn checked_search(
         for ((&a, &b), label) in q0.iter().zip(&q1).zip(task.labels()) {
             if let Some(want) = *label {
                 assert!((b - want).abs() <= (a - want).abs(), "a pin gets worse");
+                if m.before.gap_squares == 0 {
+                    assert_eq!(a, b, "a move after feasibility changes a pin");
+                }
             }
         }
         assert_eq!(q1.iter().map(|&q| i32::from(q)).sum::<i32>(), 0);
@@ -682,16 +690,23 @@ fn time_bounded_search_records_host_use_and_every_final_state() {
         let links = task.positions().len();
         let starts: Vec<Vec<i8>> = (0..48).map(|k| lcg_state(k, links)).collect();
         let kernel = LoopKernel::new(&task);
-        let out = search(&kernel, &starts, 9, Work::Budget, &mut never(), None).unwrap();
+        let work = Work::Budget {
+            budget: Duration::from_secs_f64(FLOW_LOOPS_DEFAULT_BUDGET_SECONDS),
+            started: Instant::now(),
+        };
+        let out = search(&kernel, &starts, 9, work, &mut never(), None).unwrap();
         let report = &out.report;
-        assert_eq!(report.work, Work::Budget);
+        assert_eq!(report.work, work);
         assert_eq!(report.policy, FLOW_LOOPS_POLICY);
-        assert!((report.budget_seconds - FLOW_LOOPS_BUDGET_SECONDS).abs() < f64::EPSILON);
+        assert_eq!(
+            report.budget_seconds,
+            Some(FLOW_LOOPS_DEFAULT_BUDGET_SECONDS)
+        );
         assert!(report.elapsed_seconds > 0.0);
         // Each check of the clock sits between two proposals, so the run
         // ends within one proposal of the budget; allow a loaded host.
         assert!(
-            report.elapsed_seconds < FLOW_LOOPS_BUDGET_SECONDS + 1.0,
+            report.elapsed_seconds < FLOW_LOOPS_DEFAULT_BUDGET_SECONDS + 1.0,
             "{}",
             report.elapsed_seconds
         );
@@ -714,4 +729,32 @@ fn time_bounded_search_records_host_use_and_every_final_state() {
             contract.family_id
         );
     }
+}
+
+/// The budget counts from the start instant that the caller gives, so the
+/// setup of a job counts against it. A job whose setup used the whole budget
+/// returns every start unchanged.
+#[test]
+fn setup_time_counts_against_the_budget() {
+    let instance = recipe_instance(&FLOW_V1, FLOW_RECIPES[2].params);
+    let (_, task) = LinkTask::from_instance(&FLOW_V1, FLOW_RECIPES[2].params, &instance).unwrap();
+    let links = task.positions().len();
+    let starts: Vec<Vec<i8>> = (0..4).map(|k| lcg_state(k, links)).collect();
+    let kernel = LoopKernel::new(&task);
+    let budget = Duration::from_millis(5);
+    let started = Instant::now()
+        .checked_sub(Duration::from_millis(50))
+        .expect("a clock older than 50 ms");
+    let out = search(
+        &kernel,
+        &starts,
+        9,
+        Work::Budget { budget, started },
+        &mut never(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(out.states, starts, "every start is returned unchanged");
+    assert!(out.report.reads.iter().all(|r| r.stop == Stop::Skipped));
+    assert!(out.report.elapsed_seconds >= 0.05);
 }

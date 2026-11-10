@@ -6,17 +6,22 @@
 //! postprocess. A job without them starts every read from the exact baseline
 //! orientation of [`super::flow::orient`] and runs a seeded search from it.
 //! Either way the job returns one state per start, in start order, so result
-//! `k` is the child of start `k`. The search runs against the declared
-//! [`super::flow_loops::FLOW_LOOPS_BUDGET_SECONDS`]. Every returned state is rescored from the
-//! job graph, and the job log keeps the declared budget apart from the
-//! measured time.
+//! `k` is the child of start `k`. The search runs against the declared budget:
+//! the `backend_toml` key `budget_s`, or
+//! [`super::flow_loops::FLOW_LOOPS_DEFAULT_BUDGET_SECONDS`]. The budget counts
+//! from the start of the job, so parsing, the baseline orientation, and the
+//! cycle tables count against it. Every returned state is rescored from the job
+//! graph, and the job log keeps the declared budget apart from the measured
+//! time.
 //!
 //! The binary declines every other job with `NO_SOLUTION`, as
 //! `quip-cpu-flow` does: a plain model, and every family it does not list,
 //! reach the sampler with no link structure.
 
-use std::sync::atomic::AtomicUsize;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use quip_protocol::scoring::energy_milli;
 use quip_solver_core::families::{Declaration, FamilyClaim, FamilyContext};
@@ -28,7 +33,9 @@ use quip_solver_core::{
 };
 
 use super::flow::{orient, FlowError, LinkTask, Mode, Outcome};
-use super::flow_loops::{search, LoopError, LoopKernel, LoopReport, Work};
+use super::flow_loops::{
+    search, LoopError, LoopKernel, LoopReport, Work, FLOW_LOOPS_DEFAULT_BUDGET_SECONDS,
+};
 use crate::{check_sample_size, run_job_pump, StreamKernelError};
 
 /// The stable id of this binary (FAM-60).
@@ -63,19 +70,78 @@ const FAMILIES: &[FamilyClaim] = &[
 const NOT_A_FLOW_JOB: &str = "quip-cpu-flow-loops solves only validated quip/flow-static@1 and \
      quip/polariton-static@1 jobs; other families and plain models have no link structure";
 
+/// The largest budget `budget_s` may set, in seconds.
+const MAX_BUDGET_SECONDS: f64 = 60.0;
+
+/// The `backend_toml` keys of this binary.
+#[derive(serde::Deserialize, Default)]
+struct FlowLoopsConfig {
+    num_cpus: Option<i64>,
+    /// The declared host-time budget of one job, in seconds.
+    budget_s: Option<f64>,
+    #[serde(flatten)]
+    unknown: BTreeMap<String, toml::Value>,
+}
+
+/// The budget that `budget_s` sets, or why it is refused.
+fn configured_budget(value: Option<f64>) -> Result<Option<Duration>, String> {
+    match value {
+        None => Ok(None),
+        Some(s) if s.is_finite() && s > 0.0 && s <= MAX_BUDGET_SECONDS => {
+            Ok(Some(Duration::from_secs_f64(s)))
+        }
+        Some(s) => Err(format!(
+            "budget_s = {s} is outside (0, {MAX_BUDGET_SECONDS}] seconds"
+        )),
+    }
+}
+
+/// Refuse a bad `budget_s` at handshake. A typo must not run the wrong
+/// allowance, because the allowance is what makes the B arm comparable.
+#[expect(
+    clippy::exit,
+    clippy::print_stderr,
+    reason = "a bad budget_s is an operator typo; refuse to start rather than run another allowance"
+)]
+fn reject_config(why: &str) -> ! {
+    eprintln!("configuration error: {why}");
+    std::process::exit(64);
+}
+
 /// The constrained loop search.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FlowLoopsSampler {
     /// 0 means use host parallelism.
     num_cpus: Arc<AtomicUsize>,
+    /// The declared budget of one job, as the bits of an `f64` in seconds.
+    budget_bits: Arc<AtomicU64>,
+}
+
+impl Default for FlowLoopsSampler {
+    fn default() -> Self {
+        Self {
+            num_cpus: Arc::default(),
+            budget_bits: Arc::new(AtomicU64::new(FLOW_LOOPS_DEFAULT_BUDGET_SECONDS.to_bits())),
+        }
+    }
 }
 
 impl FlowLoopsSampler {
-    /// A sampler that runs one job per core.
+    /// A sampler that runs one job per core with the default budget.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// The declared budget of one job.
+    fn budget(&self) -> Duration {
+        budget_of(&self.budget_bits)
+    }
+}
+
+/// The budget stored in `bits`.
+fn budget_of(bits: &AtomicU64) -> Duration {
+    Duration::from_secs_f64(f64::from_bits(bits.load(Ordering::Relaxed)))
 }
 
 /// Why a job has no result.
@@ -130,7 +196,9 @@ fn job_reads(
     warm: Option<&[Vec<i8>]>,
     family: Option<&FamilyContext>,
     cancel: Option<(&CancelToken, Option<u64>)>,
+    budget: Duration,
 ) -> Result<Vec<SamplerResult>, Failure> {
+    let started = Instant::now();
     let family = family
         .filter(|f| Mode::of(f.contract()).is_some())
         .ok_or_else(|| Failure::declined(NOT_A_FLOW_JOB))?;
@@ -147,7 +215,7 @@ fn job_reads(
         &kernel,
         &starts,
         params.seed,
-        Work::Budget,
+        Work::Budget { budget, started },
         &mut cancelled,
         None,
     )
@@ -175,7 +243,7 @@ fn log_job(mode: Mode, report: &LoopReport, warm: bool, reads: &[SamplerResult])
     tracing::info!(
         policy = report.policy,
         mode = mode.name(),
-        budget_seconds = report.budget_seconds,
+        budget_seconds = ?report.budget_seconds,
         work = ?report.work,
         elapsed_seconds = report.elapsed_seconds,
         warm,
@@ -189,6 +257,7 @@ fn log_job(mode: Mode, report: &LoopReport, warm: bool, reads: &[SamplerResult])
         rounds = ?records.iter().map(|r| r.rounds).collect::<Vec<_>>(),
         cycle_moves = records.iter().map(|r| r.cycle_moves).sum::<u64>(),
         worm_moves = records.iter().map(|r| r.worm_moves).sum::<u64>(),
+        repair_moves = records.iter().map(|r| r.repair_moves).sum::<u64>(),
         zero_moves = records.iter().map(|r| r.zero_moves).sum::<u64>(),
         proposals = records.iter().map(|r| r.proposals).sum::<u64>(),
         read_seconds = ?records.iter().map(|r| r.seconds).collect::<Vec<_>>(),
@@ -245,7 +314,14 @@ impl Sampler for FlowLoopsSampler {
     ) -> Result<Vec<SamplerResult>, SampleError> {
         check_sample_size(graph.h.len(), graph.edges.len())?;
         let starts = warm.map(|w| w.spins.as_slice());
-        into_result(job_reads(graph, params, starts, Some(family), None))
+        into_result(job_reads(
+            graph,
+            params,
+            starts,
+            Some(family),
+            None,
+            self.budget(),
+        ))
     }
 
     fn declaration() -> Declaration {
@@ -265,9 +341,37 @@ impl Sampler for FlowLoopsSampler {
     }
 
     fn apply_config(&self, backend_toml: &str) {
-        if let Err(e) = crate::apply_num_cpus(&self.num_cpus, backend_toml) {
-            tracing::error!(error = %e, "cpu num_cpus rejected");
-            crate::reject_num_cpus(e);
+        let config: FlowLoopsConfig = if backend_toml.trim().is_empty() {
+            FlowLoopsConfig::default()
+        } else {
+            match toml::from_str(backend_toml) {
+                Ok(config) => config,
+                Err(_) => crate::reject_num_cpus(crate::NumCpusError::InvalidToml),
+            }
+        };
+        quip_solver_core::config::warn_unknown_fields("cpu", config.unknown.keys());
+        match crate::check_num_cpus(config.num_cpus) {
+            Ok(Some(requested)) => crate::store_num_cpus(&self.num_cpus, requested),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "cpu num_cpus rejected");
+                crate::reject_num_cpus(e);
+            }
+        }
+        match configured_budget(config.budget_s) {
+            Ok(Some(budget)) => {
+                self.budget_bits
+                    .store(budget.as_secs_f64().to_bits(), Ordering::Relaxed);
+                tracing::info!(
+                    budget_s = budget.as_secs_f64(),
+                    "flow-loops budget configured"
+                );
+            }
+            Ok(None) => {}
+            Err(why) => {
+                tracing::error!(%why, "flow-loops budget_s rejected");
+                reject_config(&why);
+            }
         }
     }
 
@@ -281,21 +385,28 @@ impl Sampler for FlowLoopsSampler {
         out: tokio::sync::mpsc::Sender<StreamResult>,
         cancel: CancelToken,
     ) {
+        let budget_bits = Arc::clone(&self.budget_bits);
         run_job_pump(
             || self.stream_width(),
-            |job: &WarmStreamJob, token: &CancelToken| {
+            move |job: &WarmStreamJob, token: &CancelToken| {
                 let (graph, params) = (&job.job.graph, &job.job.params);
                 check_sample_size(graph.h.len(), graph.edges.len())
                     .map_err(StreamKernelError::Reject)?;
                 let guard = Some((token, job.job.watermark));
                 let starts = job.warm_start.as_ref().map(|w| w.spins.as_slice());
-                job_reads(graph, params, starts, job.family.as_ref(), guard).map_err(|failure| {
-                    match failure {
-                        Failure::Declined(detail) => {
-                            StreamKernelError::Reject(SampleError::Declined(detail))
-                        }
-                        Failure::Cancelled => StreamKernelError::Cancelled,
+                job_reads(
+                    graph,
+                    params,
+                    starts,
+                    job.family.as_ref(),
+                    guard,
+                    budget_of(&budget_bits),
+                )
+                .map_err(|failure| match failure {
+                    Failure::Declined(detail) => {
+                        StreamKernelError::Reject(SampleError::Declined(detail))
                     }
+                    Failure::Cancelled => StreamKernelError::Cancelled,
                 })
             },
             jobs,
@@ -307,13 +418,50 @@ impl Sampler for FlowLoopsSampler {
 
 #[cfg(test)]
 mod tests {
-    use super::{FlowLoopsSampler, FAMILIES};
+    use super::{configured_budget, FlowLoopsSampler, FAMILIES, MAX_BUDGET_SECONDS};
+    use crate::families::flow_loops::FLOW_LOOPS_DEFAULT_BUDGET_SECONDS;
     use quip_solver_core::families::FamilyTable;
     use quip_solver_core::ising_generators::defects::DEFECTS_V1;
     use quip_solver_core::ising_generators::flow::FLOW_V1;
     use quip_solver_core::ising_generators::polariton::POLARITON_V1;
     use quip_solver_core::ising_generators::routing::ROUTING_V1;
     use quip_solver_core::{IsingGraph, SampleError, SampleParams, Sampler};
+    use std::time::Duration;
+
+    #[test]
+    fn budget_s_sets_the_declared_budget_and_refuses_bad_values() {
+        let sampler = FlowLoopsSampler::new();
+        let default = Duration::from_secs_f64(FLOW_LOOPS_DEFAULT_BUDGET_SECONDS);
+        assert_eq!(sampler.budget(), default);
+        sampler.apply_config("");
+        assert_eq!(
+            sampler.budget(),
+            default,
+            "an empty config keeps the default"
+        );
+        sampler.apply_config("budget_s = 0.05");
+        assert_eq!(sampler.budget(), Duration::from_millis(50));
+        sampler.apply_config("num_cpus = 2");
+        assert_eq!(
+            sampler.budget(),
+            Duration::from_millis(50),
+            "no key keeps the value"
+        );
+        assert_eq!(configured_budget(None), Ok(None));
+        assert_eq!(
+            configured_budget(Some(MAX_BUDGET_SECONDS)),
+            Ok(Some(Duration::from_secs_f64(MAX_BUDGET_SECONDS)))
+        );
+        for bad in [
+            0.0,
+            -0.25,
+            MAX_BUDGET_SECONDS + 1.0,
+            f64::NAN,
+            f64::INFINITY,
+        ] {
+            assert!(configured_budget(Some(bad)).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn the_declaration_lists_exactly_the_p_and_f_revisions() {

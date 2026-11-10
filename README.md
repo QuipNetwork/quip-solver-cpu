@@ -536,16 +536,24 @@ the job seed drives the search. Each job returns one state per start, in start
 order. Result `k` comes from start `k`. The sampler rescores each result
 from the job graph.
 
-The search runs against a declared budget of 0.25 s of host time per job.
-That is the postprocess allowance of the paired A cells of plan 2: 0.25 CPU
-seconds per QPU call for `ice-charge`, `ice-fields-h500`, and
-`ice-fields-h1000`. The job log records the declared budget beside the
-measured time, with one record per read. The budget is a limit, and a read
-that converges stops early. Read `k` of `n` has until `(k + 1) / n` of the
-budget. If the budget runs out first, a later read keeps its start as its
-result. The time limit makes the result depend on the host.
-Only a fixed-work run is reproducible. The binary declines
-every job without a listed family with `NO_SOLUTION`, as `quip-cpu-flow` does.
+The search runs against a declared budget of host time per job. Plan 2 gives
+each B family the postprocess allowance of its paired A cell: 0.25 s for
+`ice-charge`, `ice-fields-h500`, and `ice-fields-h1000`, and 0.05 s for
+`two-commodity-routing`. A job does not name its pair, so the default is 0.25
+s and the `backend_toml` key `budget_s` sets another budget. A value outside 0
+to 60 seconds stops the binary at handshake. The budget counts from the start
+of the job, so the setup counts against it. The job log records the declared
+budget beside the measured time, with one record per read. The budget is a
+limit, and a read that converges stops early. Read `k` of `n` has until `(k +
+1) / n` of the budget. If the budget runs out first, a later read keeps its
+start as its result. The time limit makes the result depend on the host. Only
+a fixed-work run is reproducible.
+
+Every move keeps or lowers the squared label gaps. So a read that reaches a
+feasible state keeps every label from then on, and its later moves are loops
+or boundary strings only. The log counts short-cycle, worm, and repair moves
+apart. The binary declines every job without a listed family with
+`NO_SOLUTION`, as `quip-cpu-flow` does.
 
 `tests/flow_loops.rs` scores every state of side-2 instances of both families
 against the instance energy. It checks the change of each short cycle against
@@ -554,7 +562,7 @@ charges, the labels, and the exact rescore after each kept move. A periodic
 side-2 lattice tests parallel links. Other tests reject bad boundary labels,
 bad link positions, and bad starts. A fixed-work run must match
 `tests/fixtures/flow_loops_golden.json`. A timed run must record its host time
-and a result for every start. To record the golden output again, set
+and a result for every start, and setup time must count against the budget. To record the golden output again, set
 `QUIP_FLOW_LOOPS_BLESS=1` and run the test. `tests/flow_loops_conformance.rs`
 runs the family gate.
 
