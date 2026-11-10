@@ -548,9 +548,9 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "ising-generators"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bf56e41d6fe77eddc2570cf8dab031ad9bf2246a71739bdd97dde70f9ebeee4"
+checksum = "35b620853a53dc807601c7b5bc26b3161c8d0e73c97d7f3f63657a3e524979f5"
 dependencies = [
  "blake3",
 ]
@@ -873,9 +873,9 @@ dependencies = [
 
 [[package]]
 name = "quip-proto"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf24cb4404cfd97f42ffef2b2ed4e01269267ff243824e0a16d9db552aa3d149"
+checksum = "1635e87e85d07131e095795a052060e19a91b5a8c4ed02aaf3fe31bbc0e41479"
 dependencies = [
  "prost",
  "tonic",
@@ -883,9 +883,9 @@ dependencies = [
 
 [[package]]
 name = "quip-protocol"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d64a6d57fac6ecaa12665ef5a85f62a3bea02abba201d747204cb3a7052b3435"
+checksum = "47ff4574ad1ddf327d7c3327cf334c58c2714d004760a24035d07abb16a0f1f8"
 dependencies = [
  "ising-generators",
  "quip-proto",
@@ -893,9 +893,9 @@ dependencies = [
 
 [[package]]
 name = "quip-solver-core"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0a7392eca07e4af512489b43fc69a0d403adfcfc102587d07a60135b17509ef"
+checksum = "3da932a5ccd6d7e11958abdc33a12a2f7bf3d66bc628bea0ac43d6f41abba01f"
 dependencies = [
  "base64",
  "clap",

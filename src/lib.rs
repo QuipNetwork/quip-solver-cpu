@@ -18,6 +18,7 @@ pub mod flatiron_sampler;
 pub mod gibbs_parallel;
 pub mod mps;
 pub mod mps_sampler;
+pub mod postprocess;
 pub mod research;
 mod sa_int;
 mod sa_msc;
@@ -38,6 +39,7 @@ pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
 pub use gibbs_parallel::{ConfigError, GibbsConfig, GibbsParallelism};
 pub use mps::{sample_ising_mps, InitMode, MpsConfig};
 pub use mps_sampler::{MpsSampler, CPU_MFA_IDENTITY, CPU_MPS_IDENTITY};
+pub use postprocess::sampler::{GreedySampler, CPU_GREEDY_IDENTITY, GREEDY_SOLVER_ID};
 pub use quip_solver_core::{Algorithm, IsingGraph, SampleParams, Sampler, SamplerResult};
 pub use research::{
     sample_research, ResearchError, ResearchKernel, ResearchMetadata, ResearchSamples,
@@ -681,7 +683,8 @@ mod tests {
 
     /// Every identity states its limits, and lists `linear-schedule` exactly
     /// when its kernel anneals a beta ladder. The Simulated Bifurcation
-    /// kernels have no ladder. The two lists together cover every binary.
+    /// kernels and the greedy descent have no ladder. The three lists together
+    /// cover every binary.
     #[test]
     fn every_identity_states_its_schedule_feature_and_limits() {
         let ladder = [
@@ -706,6 +709,7 @@ mod tests {
             CPU_SBQA_IDENTITY,
             CPU_GGDSB_IDENTITY,
         ];
+        let descent = [CPU_GREEDY_IDENTITY];
         let linear = quip_solver_core::LINEAR_SCHEDULE_FEATURE;
         for id in &ladder {
             assert!(id.features.contains(&linear), "{:?}", id.algorithm);
@@ -715,9 +719,17 @@ mod tests {
             assert!(!id.features.contains(&linear), "{:?}", id.algorithm);
             assert_eq!(id.limits, sb_sampler::SB_LIMITS, "{:?}", id.algorithm);
         }
+        for id in &descent {
+            assert!(!id.features.contains(&linear), "{:?}", id.algorithm);
+            assert_eq!(id.limits, F64_LIMITS, "{:?}", id.algorithm);
+        }
 
-        let algorithms: std::collections::BTreeSet<_> =
-            ladder.iter().chain(&sb).map(|id| id.algorithm).collect();
+        let algorithms: std::collections::BTreeSet<_> = ladder
+            .iter()
+            .chain(&sb)
+            .chain(&descent)
+            .map(|id| id.algorithm)
+            .collect();
         // The bench is a profiling tool, not a solver, so it has no identity.
         let bins = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin"))
             .expect("src/bin")
@@ -726,7 +738,7 @@ mod tests {
                     .map_or(true, |e| e.file_name() != "quip_cpu_bench.rs")
             })
             .count();
-        assert_eq!(algorithms.len(), ladder.len() + sb.len());
+        assert_eq!(algorithms.len(), ladder.len() + sb.len() + descent.len());
         assert_eq!(algorithms.len(), bins);
     }
 
