@@ -42,10 +42,17 @@
 //! and the zero-move budget of the call still covers its length. Sweeps stop
 //! after a sweep with no strict improvement, or after [`MAX_SWEEPS`].
 //!
+//! Every move keeps or lowers the gap squares, so a read that reaches a
+//! feasible state keeps every label from then on. From that state on, a kept
+//! move is a directed cycle or a string between free boundary vertices, and the
+//! search is a constraint-preserving loop descent. The counts of short-cycle,
+//! worm, and repair moves are kept apart in the [`ReadRecord`].
+//!
 //! [`Work::Fixed`] runs depend only on the inputs and the seed.
-//! [`Work::Budget`] runs read the clock on the calling thread against the
-//! declared [`FLOW_LOOPS_BUDGET_SECONDS`], so their trajectories depend on the
-//! host and its load. Both keep one result per input state, in input order.
+//! [`Work::Budget`] runs read the clock on the calling thread against a
+//! declared budget, so their trajectories depend on the host and its load. The
+//! budget counts from a start instant that the caller gives, so the setup of a
+//! job counts against it. Both keep one result per input state, in input order.
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -57,12 +64,13 @@ use super::flow::LinkTask;
 /// The policy name in logs.
 pub const FLOW_LOOPS_POLICY: &str = "flow-loops-nat/1";
 
-/// The declared host-time budget of one job, in seconds. Plan 2, Task 7 gives
-/// the B families the postprocess allowance of their paired A cell: 0.25 CPU
-/// seconds per QPU call for `ice-charge` (the pair of adapted P) and for
-/// `ice-fields-h500` and `ice-fields-h1000` (two of the three pairs of
-/// F-static).
-pub const FLOW_LOOPS_BUDGET_SECONDS: f64 = 0.25;
+/// The default host-time budget of one job, in seconds. Plan 2 gives each B
+/// family the postprocess allowance of its paired A cell: 0.25 s for
+/// `ice-charge` (the pair of adapted P) and for `ice-fields-h500` and
+/// `ice-fields-h1000` (pairs of F-static), and 0.05 s for
+/// `two-commodity-routing` (the other pair of F-static). A job does not name
+/// its pair, so the operator sets the budget of the routing pair.
+pub const FLOW_LOOPS_DEFAULT_BUDGET_SECONDS: f64 = 0.25;
 
 /// The most links in one worm walk, the `len=64` of the selected
 /// `ice-tiles` contract.
@@ -131,12 +139,18 @@ fn gap(charge: i8, label: i8) -> i64 {
 /// How much work a search does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Work {
-    /// Run against [`FLOW_LOOPS_BUDGET_SECONDS`] of elapsed time on the
-    /// calling thread, with at most [`ROUNDS`] rounds per read. Read `k` of
+    /// Run against `budget` of elapsed time on the calling thread, counted
+    /// from `started`, with at most [`ROUNDS`] rounds per read. Read `k` of
     /// `n` must stop by `(k + 1) / n` of the budget, so time a read leaves
     /// unused passes to the next. A read that would start after the budget is
     /// returned unchanged. The trajectory depends on the host and its load.
-    Budget,
+    Budget {
+        /// The declared budget of the job.
+        budget: Duration,
+        /// When the job started. Setup before the search counts against the
+        /// budget.
+        started: Instant,
+    },
     /// Run at most `rounds` rounds per read with no clock. The result depends
     /// only on the inputs and the seed.
     Fixed {
@@ -222,15 +236,14 @@ pub struct ReadRecord {
 pub struct LoopReport {
     /// [`FLOW_LOOPS_POLICY`].
     pub policy: &'static str,
-    /// The declared budget, [`FLOW_LOOPS_BUDGET_SECONDS`], whatever the work
-    /// mode.
-    pub budget_seconds: f64,
+    /// The declared budget in seconds, or `None` for fixed work.
+    pub budget_seconds: Option<f64>,
     /// The work mode of this run.
     pub work: Work,
     /// One record per input state, in input order.
     pub reads: Vec<ReadRecord>,
-    /// The measured time of the whole search on the calling thread, in
-    /// seconds.
+    /// The measured time on the calling thread, in seconds: from the start
+    /// instant of the budget, or from the start of the search for fixed work.
     pub elapsed_seconds: f64,
 }
 
@@ -891,10 +904,9 @@ pub fn search(
         };
         scored.push((check.charges, start_score));
     }
-    let started = Instant::now();
-    let (rounds, budget) = match work {
-        Work::Budget => (ROUNDS, Some(FLOW_LOOPS_BUDGET_SECONDS)),
-        Work::Fixed { rounds } => (rounds, None),
+    let (rounds, budget, started) = match work {
+        Work::Budget { budget, started } => (ROUNDS, Some(budget), started),
+        Work::Fixed { rounds } => (rounds, None, Instant::now()),
     };
     let mut hooks = Hooks {
         cancelled,
@@ -905,7 +917,7 @@ pub fn search(
     let mut records = Vec::with_capacity(reads);
     for (k, (start, (charges, start_score))) in starts.iter().zip(scored).enumerate() {
         let deadline = budget.map(|b| {
-            let share = b * (k + 1) as f64 / reads as f64;
+            let share = b.as_secs_f64() * (k + 1) as f64 / reads as f64;
             started + Duration::from_secs_f64(share)
         });
         let read_started = Instant::now();
@@ -945,7 +957,7 @@ pub fn search(
         states,
         report: LoopReport {
             policy: FLOW_LOOPS_POLICY,
-            budget_seconds: FLOW_LOOPS_BUDGET_SECONDS,
+            budget_seconds: budget.map(|b| b.as_secs_f64()),
             work,
             reads: records,
             elapsed_seconds: started.elapsed().as_secs_f64(),
