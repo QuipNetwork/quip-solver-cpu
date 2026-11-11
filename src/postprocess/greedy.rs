@@ -457,6 +457,11 @@ impl Greedy {
         &self.mv_idx[self.mv_ptr[m]..self.mv_ptr[m + 1]]
     }
 
+    /// The edges inside move `m`: each as its two members and its coupling.
+    pub(super) fn inner(&self, m: usize) -> &[(u32, u32, i64)] {
+        &self.inner[self.in_ptr[m]..self.in_ptr[m + 1]]
+    }
+
     /// The energy change of applying move `m` at `s`, from fields computed
     /// directly.
     ///

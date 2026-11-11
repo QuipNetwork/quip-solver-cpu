@@ -99,14 +99,14 @@ pub(super) fn job_ising(graph: &IsingGraph) -> Result<Ising, SampleError> {
 
 /// The declared structure of a family job, in dense node positions.
 #[derive(Default)]
-pub(super) struct Structure {
+pub(crate) struct Structure {
     pub(super) tiles: Vec<[u32; 4]>,
     pub(super) pairs: Vec<(u32, u32)>,
 }
 
 /// The structure of a job: the tiles and pairs of a validated
 /// twisted-ice-dimer job, and none for any other job.
-pub(super) fn job_structure(graph: &IsingGraph, family: Option<&FamilyContext>) -> Structure {
+pub(crate) fn job_structure(graph: &IsingGraph, family: Option<&FamilyContext>) -> Structure {
     family
         .filter(|f| {
             f.family_id() == TWISTED_DIMER_V1.family_id && f.revision() == TWISTED_DIMER_V1.revision
@@ -128,13 +128,13 @@ pub(super) fn instance_structure(graph: &IsingGraph, instance: &Instance) -> Opt
 }
 
 /// Why a job produced no reads.
-pub(super) enum Failure {
+pub(crate) enum Failure {
     Rejected(SampleError),
     Cancelled,
 }
 
 /// Descend every start state of one job.
-pub(super) fn greedy_reads(
+pub(crate) fn greedy_reads(
     graph: &IsingGraph,
     params: &SampleParams,
     starts: Option<&[Vec<i8>]>,
@@ -227,7 +227,7 @@ fn log_job(
     );
 }
 
-pub(super) fn into_result(
+pub(crate) fn into_result(
     reads: Result<Vec<SamplerResult>, Failure>,
 ) -> Result<Vec<SamplerResult>, SampleError> {
     match reads {
