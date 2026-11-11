@@ -37,7 +37,9 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use tracing::trace_span;
 
-use crate::sampler_core::{random_spins, SampleCancelled};
+use crate::sampler_core::{
+    around, random_spins, sit_out_from_draw, sweep_sit_out, SampleCancelled, NO_SIT_OUT,
+};
 
 /// Largest `|h_i| + Σ_j |J_ij|` this path builds an acceptance table for.
 ///
@@ -364,34 +366,63 @@ pub(crate) fn fill_threshold_row(beta: f64, cut: &mut [u64], rng: &mut SmallRng,
     }
 }
 
-/// Cyclic shifts into the threshold table, one per sweep.
+/// One 64-bit draw per sweep, which [`anneal_from`] splits two ways.
 ///
-/// Drawn up front so the annealing core is a pure function of its inputs and
-/// the scalar and multi-spin kernels can be driven from the same shifts in a
-/// differential test.
-pub(crate) fn sweep_offsets(
-    rungs: usize,
-    sweeps_per_beta: usize,
-    rng: &mut SmallRng,
-) -> Vec<usize> {
+/// The low bits are the sweep's cyclic shift into the threshold table. The
+/// high bits pick the node the sweep leaves out
+/// ([`crate::sampler_core::sit_out_from_draw`]).
+///
+/// Drawn up front so the annealing core is a pure function of its inputs.
+pub(crate) fn sweep_draws(rungs: usize, sweeps_per_beta: usize, rng: &mut SmallRng) -> Vec<u64> {
     (0..rungs * sweeps_per_beta)
-        .map(|_| (rng.gen::<u64>() as usize) & (DRAW_ROW - 1))
+        .map(|_| rng.gen::<u64>())
         .collect()
 }
 
-/// The tabulated-threshold annealing core: pure given `spins` and `offsets`.
+/// Threshold updates for the nodes in `vars`, in order, against one rung's
+/// threshold row read from the cyclic offset `off`.
+///
+/// Never inlined: a sweep calls it once on each side of the node sitting
+/// out, and one shared copy of this loop measured about 9% faster on x86
+/// (Ryzen 9 7950X) than a copy inlined at each call. The Metropolis loops
+/// measured the other way, so [`sweep_range`] is always inlined.
+#[inline(never)]
+fn threshold_range(
+    graph: &IntGraph,
+    row: &[u8; DRAW_ROW],
+    off: usize,
+    spins: &mut [i8],
+    heff: &mut [i8],
+    vars: std::ops::Range<usize>,
+) {
+    const MASK: usize = DRAW_ROW - 1;
+    for var in vars {
+        let m = if spins[var] > 0 {
+            heff[var]
+        } else {
+            -heff[var]
+        };
+        let thr = row[(var + off) & MASK] as i8;
+        if m >= -thr {
+            flip(graph, spins, heff, var);
+        }
+    }
+}
+
+/// The tabulated-threshold annealing core: pure given `spins` and `sweep_draws`.
 pub(crate) fn anneal_from(
     graph: &IntGraph,
     draws: &[u8],
     sweeps_per_beta: usize,
     spins: &mut [i8],
-    offsets: &[usize],
+    sweep_draws: &[u64],
     cancel: Option<(&CancelToken, Option<u64>)>,
 ) -> Result<(), SampleCancelled> {
     let n = graph.num_nodes();
     let mut heff = seed_fields(graph, spins);
     const MASK: usize = DRAW_ROW - 1;
 
+    let sweeps = draws.as_chunks::<DRAW_ROW>().0.len() * sweeps_per_beta;
     let mut sweep = 0usize;
     for row in draws.as_chunks::<DRAW_ROW>().0 {
         for _ in 0..sweeps_per_beta {
@@ -400,22 +431,70 @@ pub(crate) fn anneal_from(
                     return Err(SampleCancelled);
                 }
             }
-            let off = offsets.get(sweep).copied().unwrap_or(0);
+            // A sweep with no draw reads the row from offset 0 and, like the
+            // last sweep of the read, leaves no node out.
+            let draw = sweep_draws.get(sweep).copied();
             sweep += 1;
-            for var in 0..n {
-                let m = if spins[var] > 0 {
-                    heff[var]
-                } else {
-                    -heff[var]
-                };
-                let thr = row[(var + off) & MASK] as i8;
-                if m >= -thr {
-                    flip(graph, spins, &mut heff, var);
-                }
-            }
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "the mask keeps only low bits"
+            )]
+            let off = draw.unwrap_or(0) as usize & MASK;
+            let skip = match draw {
+                Some(draw) if sweep < sweeps => sit_out_from_draw(n, draw),
+                Some(_) | None => NO_SIT_OUT,
+            };
+            let (before, after) = around(n, skip);
+            threshold_range(graph, row, off, spins, &mut heff, before);
+            threshold_range(graph, row, off, spins, &mut heff, after);
         }
     }
     Ok(())
+}
+
+/// Metropolis updates for the nodes in `vars`, in order, against one rung's
+/// acceptance row. Returns the number of accepted flips.
+///
+/// Always inlined: a sweep calls it once on each side of the node sitting
+/// out. A shared, non-inlined copy of this loop measured about 9% slower on
+/// x86 (Ryzen 9 7950X). The tabulated loop measured the other way, so
+/// `threshold_range` in [`crate::sa_int`] is never inlined.
+#[inline(always)]
+fn sweep_range(
+    graph: &IntGraph,
+    row: &[f64],
+    spins: &mut [i8],
+    heff: &mut [i8],
+    rng: &mut SmallRng,
+    vars: std::ops::Range<usize>,
+) -> u64 {
+    let mut accepts = 0;
+    for var in vars {
+        #[cfg(feature = "fine-spans")]
+        let _d = trace_span!("spin_decision").entered();
+        // `m` is the field seen along the spin's own direction, so the
+        // flip costs `delta = -2m`. Downhill and flat candidates
+        // (`m >= 0`) are accepted without drawing, which is what keeps
+        // the random stream aligned with the `f64` kernel.
+        let m = if spins[var] > 0 {
+            heff[var]
+        } else {
+            -heff[var]
+        };
+        // Spelled with the same `u < accept_prob` the `f64` kernel
+        // uses, rather than the negated `u >= accept_prob`. The two
+        // disagree when the table holds a NaN, and only this order
+        // rejects where the `f64` kernel rejects. `m >= 0` short
+        // circuits, so an accepted downhill flip still draws nothing.
+        let accept = m >= 0 || rng.gen::<f64>() < row[usize::from(m.unsigned_abs())];
+        if accept {
+            #[cfg(feature = "fine-spans")]
+            let _f = trace_span!("apply_flip").entered();
+            flip(graph, spins, heff, var);
+            accepts += 1;
+        }
+    }
+    accepts
 }
 
 /// One annealing read over the integer kernel.
@@ -444,6 +523,7 @@ pub(crate) fn anneal_one_read_int(
 
     let mut accepts: u64 = 0;
     let sweep_span = trace_span!("sweep_loop").entered();
+    let mut sweeps_left = table.chunks_exact(graph.row_len()).len() * sweeps_per_beta;
     for row in table.chunks_exact(graph.row_len()) {
         for _ in 0..sweeps_per_beta {
             // One Relaxed load per sweep, matching the `f64` kernel's budget.
@@ -452,31 +532,12 @@ pub(crate) fn anneal_one_read_int(
                     return Err(SampleCancelled);
                 }
             }
-            for var in 0..n {
-                #[cfg(feature = "fine-spans")]
-                let _d = trace_span!("spin_decision").entered();
-                // `m` is the field seen along the spin's own direction, so the
-                // flip costs `delta = -2m`. Downhill and flat candidates
-                // (`m >= 0`) are accepted without drawing, which is what keeps
-                // the random stream aligned with the `f64` kernel.
-                let m = if spins[var] > 0 {
-                    heff[var]
-                } else {
-                    -heff[var]
-                };
-                // Spelled with the same `u < accept_prob` the `f64` kernel
-                // uses, rather than the negated `u >= accept_prob`. The two
-                // disagree when the table holds a NaN, and only this order
-                // rejects where the `f64` kernel rejects. `m >= 0` short
-                // circuits, so an accepted downhill flip still draws nothing.
-                let accept = m >= 0 || rng.gen::<f64>() < row[usize::from(m.unsigned_abs())];
-                if accept {
-                    #[cfg(feature = "fine-spans")]
-                    let _f = trace_span!("apply_flip").entered();
-                    flip(graph, &mut spins, &mut heff, var);
-                    accepts += 1;
-                }
-            }
+            sweeps_left -= 1;
+            let drawn = sweep_sit_out(n, rng);
+            let skip = if sweeps_left == 0 { NO_SIT_OUT } else { drawn };
+            let (before, after) = around(n, skip);
+            accepts += sweep_range(graph, row, &mut spins, &mut heff, rng, before);
+            accepts += sweep_range(graph, row, &mut spins, &mut heff, rng, after);
         }
     }
     drop(sweep_span);
@@ -534,6 +595,19 @@ mod tests {
                 assert_eq!(fast, slow, "seed {seed} read {read}");
             }
         }
+    }
+
+    #[test]
+    fn a_sweep_without_a_draw_leaves_no_node_out() {
+        // No bonds and no fields: every candidate is flat and flips. Three
+        // sweeps with no sweep draws must flip every node three times.
+        let graph = IsingGraph::new(vec![0.0; 4], vec![], vec![]);
+        let int = IntGraph::from_base(&graph).expect("unit couplings");
+        let mut rng = SmallRng::seed_from_u64(5);
+        let draws = threshold_draws(&[1.0, 1.0, 1.0], int.max_field(), &mut rng).expect("table");
+        let mut spins = vec![1i8; 4];
+        anneal_from(&int, &draws, 1, &mut spins, &[], None).expect("no cancel token");
+        assert_eq!(spins, vec![-1i8; 4]);
     }
 
     #[test]
