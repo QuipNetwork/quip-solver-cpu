@@ -16,11 +16,14 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN rustup component add clippy rustfmt \
     && rustup target add aarch64-unknown-linux-gnu
 
+# libc6-dev-arm64-cross holds the aarch64 libc headers that C build scripts
+# (blake3) need. gcc-aarch64-linux-gnu only recommends it.
 # python3-venv upgrades the image's python3.13 packages. That costs minutes in
 # a job container, which is why it happens here, once.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu python3-venv \
+    && apt-get install -y --no-install-recommends \
+        gcc-aarch64-linux-gnu libc6-dev-arm64-cross python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # `maturin develop` installs the binding into the active virtual environment,
