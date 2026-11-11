@@ -1,4 +1,4 @@
-stages: [test, build, release]
+stages: [toolchain, test, build, release]
 
 include:
   - project: quip.network/ci-templates
@@ -12,15 +12,40 @@ variables:
   # 17 binary targets on three platforms. The build jobs read the target list
   # out of the manifest, so this number is the one place a new binary has to be
   # acknowledged by hand. Publishing a binary stays a deliberate decision.
-  ASSET_COUNT: "66"
+  ASSET_COUNT: "84"
+  # The toolchain image the Linux jobs run on, by digest. The
+  # build-toolchain-image job prints this line after a rebuild.
+  TOOLCHAIN_IMAGE: registry.gitlab.com/quip.network/quip-solver-cpu/ci-toolchain@sha256:89c11fed33ad62550a49b1aefd779010b0f5834493e35afafb32b09587b94fc4
 
 default:
-  image: rust:1.97
   tags: [linux, amd64]
+  # A push to a branch cancels the running jobs of the pipeline it supersedes,
+  # so a stack of rebased branches does not queue behind stale work.
+  interruptible: true
 
+# One cache per job and lockfile, not per branch. The jobs build different
+# trees (the test profile with every feature, the release binaries, an aarch64
+# cross build, the Python workspace in py/), so a shared key let the last job
+# to finish replace the others' caches. Branches with the same Cargo.lock share
+# a cache, and a dependency change starts a new one. Cargo rebuilds whatever a
+# branch changed.
+#
+# The runners keep caches locally, one volume per concurrent job slot, so a job
+# finds its cache only when it lands on the slot that saved it. A shared cache
+# on the runners would make every lookup hit; see the README.
+#
+# Only the registry index, the downloaded crate archives and the git database
+# are cached from CARGO_HOME. Cargo unpacks registry/src again from the
+# archives, and leaving it out keeps about 15,000 files out of each archive.
 cache:
-  key: cargo-$CI_COMMIT_REF_SLUG
-  paths: [.cargo/, target/]
+  key:
+    files: [Cargo.lock]
+    prefix: cargo-$CI_JOB_NAME
+  paths:
+    - .cargo/registry/index/
+    - .cargo/registry/cache/
+    - .cargo/git/db/
+    - target/
 
 # Apple Silicon runners (`macos`, `arm64`) are shell executors, so the default
 # `image:` does not apply and the default `before_script` (apt-get) would fail.
@@ -29,11 +54,20 @@ cache:
 # The cache key is deliberately different from the Linux one. `target/` holds
 # host-specific build artifacts, so sharing one key across operating systems
 # poisons both caches.
+# The Linux jobs run on the toolchain image (.gitlab/ci-toolchain.Dockerfile),
+# which already holds every tool they install, so they have no setup steps.
+.toolchain:
+  image: $TOOLCHAIN_IMAGE
+
 .macos:
   tags: [macos, arm64]
   cache:
-    key: cargo-macos-$CI_COMMIT_REF_SLUG
-    paths: [.cargo/, target/]
+    key: cargo-macos-$CI_JOB_NAME
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - target/
   before_script:
     # `--no-modify-path` keeps rustup-init from appending `source $CARGO_HOME/env`
     # to the runner's shell profile. `CARGO_HOME` is inside the build directory,
@@ -96,10 +130,58 @@ cache:
     exit 1
   fi
 
-test:
-  stage: test
+# The toolchain image. Its Dockerfile says what it holds. This job runs on a
+# branch push that changes the Dockerfile and is manual otherwise. The jobs
+# pull the image by digest, so after a rebuild copy the digest this job prints
+# into TOOLCHAIN_IMAGE in a commit of its own.
+#
+# The `docker` tag selects the Linux container executors, which run kaniko.
+# Those hosts bind-mount GPU firmware into /lib, so kaniko cannot replace /lib
+# with the base image's merged-usr symlink. It ignores /lib, and the shim
+# keeps the ELF interpreter reachable for each RUN, as in quip-miner.
+build-toolchain-image:
+  stage: toolchain
+  needs: []
+  tags: [docker, amd64]
+  image:
+    name: ghcr.io/osscontainertools/kaniko:v1.29.1-debug@sha256:ebc38a988e5aa1aaea99240e931aeeeff9d8e6bb5a0bd0e00eaf79973bf0a773
+    entrypoint: [""]
+  cache: []
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - .gitlab/ci-toolchain.Dockerfile
+    - if: $CI_COMMIT_BRANCH
+      when: manual
+      allow_failure: true
+  before_script:
+    - mkdir -p /lib && ln -sfn /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+    - mkdir -p /kaniko/.docker
+    - |
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' \
+        "$CI_REGISTRY" \
+        "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')" \
+        > /kaniko/.docker/config.json
+    # The image copies no project files, so the build context is empty.
+    - mkdir -p /tmp/toolchain-context
   script:
-    - rustup component add clippy rustfmt
+    - |
+      /kaniko/executor \
+        --context /tmp/toolchain-context \
+        --dockerfile "$CI_PROJECT_DIR/.gitlab/ci-toolchain.Dockerfile" \
+        --destination "$CI_REGISTRY_IMAGE/ci-toolchain:$CI_COMMIT_SHORT_SHA" \
+        --ignore-path=/lib \
+        --cache=true \
+        --cache-repo "$CI_REGISTRY_IMAGE/ci-toolchain-buildcache" \
+        --digest-file=/tmp/digest
+    - echo "TOOLCHAIN_IMAGE=$CI_REGISTRY_IMAGE/ci-toolchain@$(cat /tmp/digest)"
+
+test:
+  extends: .toolchain
+  stage: test
+  # The image comes by digest, not from this pipeline's build-toolchain-image.
+  needs: []
+  script:
     # Formatting is checked first: it is the cheapest job to fail and it never
     # depends on a build. Without it the tree drifts silently, because no other
     # job reads formatting.
@@ -112,22 +194,36 @@ test:
 
 # The Python binding is its own cargo workspace, so the job above never builds
 # it. Without this job it breaks unseen the first time the sampler API moves.
-# The rust image is bookworm, whose python3 is 3.11, the binding's floor.
+# The toolchain image is Debian trixie, whose python3 is 3.13. The binding's
+# floor is 3.11.
 test-py:
+  extends: .toolchain
   stage: test
+  needs: []
+  # py/ is its own workspace, so its build tree is py/target, not target/.
+  cache:
+    key:
+      files: [py/Cargo.lock]
+      prefix: cargo-$CI_JOB_NAME
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - py/target/
+  # The image's virtual environment holds maturin, numpy and pytest, and
+  # `maturin develop` installs the binding into it.
   script:
-    - rustup component add clippy rustfmt
-    - apt-get update -qq && apt-get install -y --no-install-recommends python3 python3-venv python3-pip
-    - python3 -m venv py/.venv
-    - py/.venv/bin/pip install -q "maturin>=1,<2" numpy pytest
     - cd py
     - cargo fmt -- --check
     - cargo clippy --release -- -D warnings
-    - .venv/bin/maturin develop --release
-    - .venv/bin/pytest tests -q
+    - maturin develop --release
+    - pytest tests -q
 
 .build:
   stage: build
+  # The build jobs do not use anything the test stage produces, so they start
+  # with it instead of after it. A failing test still fails the pipeline.
+  needs: []
   artifacts:
     paths: [dist/, bins.tsv]
     expire_in: 1 week
@@ -144,7 +240,7 @@ test-py:
 # The build names the feature instead of passing `--all-features`, which would
 # also turn on `fine-spans` and put per-spin spans in every released hot loop.
 build-linux-amd64:
-  extends: .build
+  extends: [.build, .toolchain]
   variables:
     BIN_DIR: target/release
     ASSET_SUFFIX: linux-amd64
@@ -152,17 +248,14 @@ build-linux-amd64:
     - cargo build --release --bins --features experimental
     - *package-bins
 
+# The image holds the aarch64 target and linker, and sets
+# CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER.
 build-linux-arm64:
-  extends: .build
+  extends: [.build, .toolchain]
   variables:
     BIN_DIR: target/aarch64-unknown-linux-gnu/release
     ASSET_SUFFIX: linux-arm64
   script:
-    # The default before_script no longer runs apt-get (the protoc install is
-    # gone), so the cross-compiler install updates the package index itself.
-    - apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu
-    - rustup target add aarch64-unknown-linux-gnu
-    - export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
     - cargo build --release --bins --features experimental --target aarch64-unknown-linux-gnu
     - *package-bins
 
@@ -184,6 +277,7 @@ build-darwin-arm64:
 upload:
   stage: release
   image: curlimages/curl:latest
+  interruptible: false
   rules:
     - if: $CI_COMMIT_TAG
   before_script: []
@@ -225,6 +319,7 @@ upload:
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
+  interruptible: false
   rules:
     - if: $CI_COMMIT_TAG
   # `needs` narrows artifact download to the jobs named here, so the job that
@@ -270,3 +365,9 @@ release:
         "Production: ${prod}" \
         "Experimental, published for evaluation and not supported for production mining: ${exp}")
       release-cli create --description "$desc" "$@"
+
+# The template puts this job in .post, after every other job. It reads only
+# the lockfiles, so it starts with the pipeline instead. It may fail; the
+# blocking gate on a release tag is the dependency-gate job in .pre.
+dependency-report:
+  needs: []

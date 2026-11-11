@@ -199,6 +199,22 @@ impl Ising {
         fields + couplings
     }
 
+    /// The edges, in the order the model was built with.
+    pub(super) fn edges(&self) -> &[(u32, u32)] {
+        &self.edges
+    }
+
+    /// The smallest nonzero coefficient magnitude over the fields and the
+    /// couplings, or `None` when every coefficient is zero.
+    pub(super) fn weakest(&self) -> Option<i64> {
+        self.h
+            .iter()
+            .chain(&self.j)
+            .map(|x| x.abs())
+            .filter(|&x| x > 0)
+            .min()
+    }
+
     /// The neighbours of `u` with their couplings, in ascending node order.
     pub(super) fn row(&self, u: usize) -> &[(u32, i64)] {
         &self.adj[self.adj_ptr[u]..self.adj_ptr[u + 1]]
@@ -439,6 +455,11 @@ impl Greedy {
     #[must_use]
     pub fn members(&self, m: usize) -> &[u32] {
         &self.mv_idx[self.mv_ptr[m]..self.mv_ptr[m + 1]]
+    }
+
+    /// The edges inside move `m`: each as its two members and its coupling.
+    pub(super) fn inner(&self, m: usize) -> &[(u32, u32, i64)] {
+        &self.inner[self.in_ptr[m]..self.in_ptr[m + 1]]
     }
 
     /// The energy change of applying move `m` at `s`, from fields computed
