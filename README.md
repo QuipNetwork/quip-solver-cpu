@@ -34,6 +34,13 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
+| `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
+| `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
+| `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
+| `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job declined | experimental |
+| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, declines every other job | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -131,10 +138,11 @@ the degeneracy. H3 reports the separation that appears once they do.
 The accepted-rate and paired best-energy comparison that decide H3 run through
 the campaign analysis script rather than through this repository.
 
-The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`) is
-published from crates.io.
+The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`)
+comes from the quip-solver-core repository, pinned to one commit. The pin
+returns to crates.io when quip-solver-core 0.0.9 is published.
 
-Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, and `quip-cpu-pairworm` declares the generic family tier: no
+Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, `quip-cpu-flow-loops`, and `quip-cpu-dipolar` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
 canonical family generator. `tests/family_capabilities.rs` checks that
 `--capabilities` and the session agree.
@@ -245,6 +253,381 @@ QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/pairworm_parity/export.p
 QUIP_PAIRWORM_PARITY=OUT cargo test --release --features experimental \
     --test postprocess_pairs -- --ignored research_parity
 ```
+
+`quip-cpu-dimer` runs the bounded weighted-dimer kernel. Its `solver_id` is
+`quip-cpu-dimer/1` and its algorithm is `weighted-dimer`. It generates and
+accepts `quip/twisted-ice-dimer` revision 1. Every other job, such as a plain
+Ising job, runs on the SA kernel.
+
+The binary is not the selected solver of any registered recipe. On the
+registered twisted-dimer cells the research selects the Otsuka cluster
+anneal, which `quip-cpu-otsuka` runs. The claim still names the whole
+revision, as the Otsuka claim does. The research selects the weighted kernel
+for no recipe, and the kernel runs the job's own sweep count, so it holds no
+tuning to one recipe.
+
+`families::dimer_weighted` ports the research `dimer_weighted.rs` and its
+`ice.rs`. The binary runs the research variant `ice-loop64-weighted`. The
+kernel keeps exact integer milliweights and a cached field for each of 64 read
+lanes. Each sweep does three things. It updates every spin once. It then flips
+each tetrahedron as one block and picks the exact best state of the block. It
+last makes 64 attempts per read to flip an alternating loop or string of the
+ice layer. The kernel ports `ice-loop-weighted` and `ice-defect64-weighted` as
+well, but the binary does not run them. The path-block, contraction, polish,
+and tempering variants of the research are not ported, because the research
+selects none of them for a registered recipe. The tempering variant
+`pt-ice-band-strong-weighted` lost to the Otsuka anneal on the registered cell
+and is not planned. The fork-only cluster
+moves and wide bond counter of `sa_msc.rs` are not needed, because this kernel
+keeps its own integer fields.
+
+The sampler checks the job before the first sweep and rejects it with
+`Declined` when any check fails. It rejects a job with a field, a coupling that
+is not an exact milliweight, or a total weight over the `i32` safety bound. It
+rejects a tile that is not a four-spin block with six distinct 1000-milli bonds
+forming a local gauge of antiferromagnetic ice. It rejects a spin in more than
+two tiles. It rejects a pair that is not an edge of coupling minus 1000 milli
+between two spins that no other pair uses. A block may have two through eight
+spins. The session refuses charged-ice and field-biased-ice jobs before the
+kernel sees them, because this binary does not accept those families.
+
+The kernel contracts nothing. The sampler rescores every read from the job
+graph, which holds the original coefficients. The random streams are the
+research streams. A stream for each read chunk draws the start states. Salted
+streams draw the single flips, the block flips, and the ice moves. The work is the sweep
+count of the job, so the kernel reads no clock. The log line of each job
+records the declared sweeps and reads next to the measured time and the ice
+move counts.
+
+`tests/dimer_family.rs` checks the states and move counts of nine research runs
+against the kernel, exact small-model energies, and every rejection.
+`research/dimer_parity/export.py vectors` writes
+`tests/fixtures/dimer_weighted_vectors.json` from the research `dimer_bench`.
+The ignored test `research_parity` replays a saved research run of a full model
+with 1785 tiles:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/dimer_parity/export.py research OUT
+QUIP_DIMER_PARITY=OUT cargo test --release --features experimental \
+    --test dimer_family -- --ignored research_parity
+```
+
+`tests/dimer_conformance.rs` runs the family gate and the plain-job
+conformance against the binary.
+
+`quip-cpu-flow` is an exact structural baseline for two square-link
+families. Its `solver_id` is `quip-cpu-flow/1` and its algorithm is `flow`. It
+generates and accepts `quip/flow-static` revision 1 (F-static) and
+`quip/polariton-static` revision 1 (adapted P), with every parameter set.
+
+Both families put one spin on each link of a square lattice. The charge of a
+vertex is the arrows in minus the arrows out, and a labeled vertex must hold
+its label. The baseline starts from one orientation. The reversal of a link
+is one unit of flow on a network with one arc per link. `families::flow`
+solves that flow exactly. The code adapts `Flow::add` and `Flow::solve` of the research
+two-commodity routing solver. First it saturates each arc of negative cost.
+Then it routes each excess on a shortest path of reduced cost. The port
+bounds each capacity and checks each sum, so an overflow gives an error and
+never a wrong answer.
+
+The two families use the flow in two modes.
+
+- F-static starts from the requested direction of every link. A reversal
+  costs the cost of its link. The result is the orientation of lowest
+  cost that holds every label. The final node potentials prove that no
+  cheaper orientation exists. The status is `certified-optimum`.
+- Adapted P starts from spin `+1` on every link and has no costs. The free
+  boundary vertices connect to one hub node. The result holds every declared
+  charge, so its charge loss is 0, the lowest possible. The status is also
+  `certified-optimum`.
+
+When no orientation holds the labels, the status is `infeasible`. The solver
+returns the set of nodes that the excess can reach. That set must send more
+flow out than its arcs can carry, which proves the labels infeasible. The
+binary declines the job with `NO_SOLUTION` and puts the cut in the detail.
+
+Each job returns one state, because the method is exact and deterministic.
+The state passes the canonical feasibility hook of its contract, and the
+sampler rescores it from the job graph. The solver checks the cancel token
+before it builds the network and before each augmentation. Each job logs the
+mode, the status, the cost, the energy, and the number of augmentations.
+
+The binary declines every job without a listed family with `NO_SOLUTION`. A
+plain model has no flow structure. A `quip/defects-static` job (D-static, with
+its dipolar energy) or a `quip/two-commodity-routing` job (occupancy) reaches
+the sampler as a plain model, so the binary declines it too. The binary does
+not approximate those energies.
+
+`tests/flow_baselines.rs` checks every side-2 and some side-3 F-static
+instances against exhaustive enumeration of the instance energy. It checks
+synthetic requests of both modes against enumeration. Some of those requests
+have no solution. It checks that adapted-P constructions hold every declared charge
+on the reference and recipe instances. `tests/flow_conformance.rs` runs the
+family gate.
+
+
+`quip-cpu-tileworm` is a postprocess for the selected charged-ice and
+field-ice cells. Its `solver_id` is `quip-cpu-tileworm/1` and its algorithm is
+`tile-worm`. It advertises `initial-spins` and accepts two families. A
+`quip/charged-ice` revision 1 job with the recipe `ice-charge` runs the policy
+`ice-tiles-charge/1`, with the research options
+`anneal:sa=1,b0=2,len=64,fe=16,nat48=1`. A `quip/ice-fields` revision 1 job
+with the recipe `h500` or `h1000` runs the policy `ice-tiles-field/1`, with
+the options `anneal:b0=2,nat48=1`. The binary generates no family work. Every
+other job runs the `greedy-nat/1` descent.
+
+`postprocess::tile_worm` ports `worm_run` of `icetiles.c`, the tile tables of
+`icetiles.py`, and `parse` and `run` of `method.py`. Each tile holds four
+spins and an energy table. A worm flips a seed spin, then repairs each tile
+that the flip left in an excited state, one corner at a time, until every
+touched tile is back in a ground state. The sampler keeps the worm when its exact energy
+change is negative, or when a Metropolis draw accepts it. Every 16 worms the spins that are in no tile get
+one sweep, and `sa=1` makes that sweep visit every spin. The schedule descends
+all supplied states first and starts from the lowest. It spends 80 percent of
+the budget on the anneal, from `b0 ln 2 / (2 w)` to `ln 1000 / (2 w)` where `w`
+is the weakest nonzero coefficient. It then runs a zero-temperature tail and
+a final descent.
+
+The declared budget is 0.25 s per job. The binary measures elapsed time on the
+thread that runs the job. The research measured process CPU time on one core.
+The kernel reads the clock once for every 64 worms, so the clock sets the
+number of worms and the inverse temperature of each block. Two hosts may give
+different results for one timed job. The result lists the final state first
+and then the descended state of each supplied read, in input order. The
+sampler rescores every state from the job graph. Before it touches a state, it
+checks the tile metadata and the coefficients against the instance. The sampler
+declines a selected job that fails a check. The worm draws its random numbers
+from the job seed. The log line of each job records the policy and the declared budget next to the
+measured time and the work done.
+
+`tests/postprocess_tiles.rs` checks the option strings, the tile tables, the
+seed sets, the schedule ends, and fixed-work runs of ten option strings against
+vectors from the research code in `tests/fixtures/tile_worm_vectors.json`.
+`research/tileworm_parity/export.py vectors` writes that file. It compiles a
+private copy of `icetiles.c` whose clock returns the block index, so a run does
+a known number of blocks. The ignored test `research_parity` replays the saved
+research runs of the three selected cells. The saved runs do not record the
+clock readings, so a replay cannot match a saved state bit for bit. The test
+checks the tile counts, the work count, and that the replay energy stays within
+0.1 percent of the saved energy:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/tileworm_parity/export.py research OUT
+QUIP_TILEWORM_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_tiles -- --ignored research_parity
+
+`quip-cpu-gadget-repair` is a postprocess for routing jobs. Its `solver_id`
+is `quip-cpu-gadget-repair/1`, its algorithm is `gadget-repair`, and its
+policy is `gadget-repair/1`. It advertises `initial-spins`. It accepts
+`quip/two-commodity-routing` revision 1 jobs with the `r32` parameters, the
+one registered recipe, on which the research tuned the 0.05 s budget and the
+repair options. The core rejects a job with other parameters as
+`FAMILY_UNSUPPORTED`. The binary generates no family work. Every other job runs the `greedy-nat/1` descent.
+This keeps the binary useful for plain and warm jobs, as the other
+postprocess binaries do. The binary declines a routing job with a malformed
+structure, gives the reason, and touches no state.
+
+`postprocess::gadget_repair` ports the gadget extraction of `gadgets.py` for
+the routing cell, `repair_run` of `repair.c`, and the schedule of `run.py`
+with default options. The routing cell has no auxiliary spins, so that part of
+the source is not ported. Each arc owns one commodity 1 spin and a two-spin
+commodity 2 chain. The moves are single spins, chains, and pairs of units that
+share a gadget. A repair first flips every move that lowers the energy. It then walks
+ejection chains over the gadget neighbours. A tabu search uses the time that
+remains. The schedule descends the supplied states with the natural moves. It
+repairs the best four states and a majority vote of the best eight. It keeps
+the lowest energy.
+
+The declared budget is 0.05 s per job. The binary measures elapsed time on the
+thread that runs the job. The research measured process CPU time on one core.
+The clock decides how many states the binary repairs and where each repair stops, so
+two hosts may give different results for one timed job. The result lists the
+final state first and then the repaired state of each start. The sampler
+rescores every state from the job graph. The repair draws its random numbers
+from the job seed.
+
+A lower energy does not prove a valid routing. The log line of each job counts
+the defects of the final state and of the best supplied state. A defect is a
+capacity conflict, a node and commodity with the wrong flow, or a broken chain. It also gives the energy with the instance offset. The counts
+come from the family routing check, never from the energy. The log line also
+records the policy and the declared budget next to the measured time and the
+clock reads of each repair.
+
+`tests/postprocess_routing.rs` checks the extraction, the repair with a fixed
+clock, and the schedule with recorded work against vectors from the research
+code in `tests/fixtures/gadget_repair_vectors.json`.
+`research/gadget_repair_parity/export.py vectors` writes that file. The
+vectors replace the CPU clock of `repair.c` by a count of clock reads. The
+same file holds the malformed chain and mapping cases. The ignored test
+`research_parity` replays six saved research runs. It finds the clock count of
+each repair that gives the saved statistics, and compares the final states:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/gadget_repair_parity/export.py research OUT
+QUIP_GADGET_PARITY=OUT cargo test --release --features experimental \
+    --test postprocess_routing -- --ignored research_parity
+
+`quip-cpu-routing` solves `quip/two-commodity-routing` revision 1. Its
+`solver_id` is `quip-cpu-routing/1` and its algorithm is `routing`. It accepts
+every valid parameter set of revision 1 and generates no family work. It has no
+fallback kernel. It declines a job with no family metadata, another family,
+another revision, or a routing section that does not decode.
+
+`families::routing` ports the research solver `routesolve`. With one commodity
+fixed, the energy of the other is a minimum-cost circulation. The solver
+solves it exactly. The two commodities then alternate, at most 50 times, until
+a response does not improve the energy. A single-flip descent on the full Ising
+model ends each run. The solver runs both start orders and returns both final
+states, the lower energy first. The cost of an arc includes the capacity penalty
+when the other commodity uses it, and a hub node absorbs the conservation
+imbalance. The energy keeps the original convention in milli. The constants
+248 and 496 and the limit of 50 alternations are the research defaults.
+
+The result is the complete ordered spin vector of the job. A spin that no arc
+uses is `+1`. The sampler rescores every state from the job graph. It logs a
+start order that fails and returns the other one. It declines a job where both
+fail. The two start orders often end at different energies, so the policy
+certifies no global optimum. The exact solver for the adapted F-static family
+is a different tool. The routing policy has no clock and no random numbers, so
+`num_reads` and the seed have no effect. The log line of each job gives the
+elapsed time, the work, and `optimum_certificate = false`.
+
+`tests/routing_solver.rs` compares both start orders to the research solver
+on six models with inactive spins, with vectors in
+`tests/fixtures/routing_vectors.json`. It also checks the independent scores,
+refused models, tampered metadata, and instances of the family.
+`research/routing_parity/export.py vectors` writes the file by running the
+research binary. The ignored test `research_parity` compares the saved
+`t1-flow` states of 12 research models bit for bit:
+
+```sh
+QUIP_RESEARCH_ROOT=/path/to/regimes python3 -I research/routing_parity/export.py research OUT
+QUIP_ROUTING_PARITY=OUT cargo test --release --features experimental \
+    --test routing_solver -- --ignored research_parity
+```
+
+`quip-cpu-flow-loops` is a local search for the same two families. Its
+`solver_id` is `quip-cpu-flow-loops/1` and its algorithm is `flow-loops`. It
+generates and accepts `quip/flow-static` revision 1 and
+`quip/polariton-static` revision 1, with every parameter set. Both build an
+open square-link lattice, which is the only geometry the search reads. The
+binary also accepts initial states, so it can postprocess reads.
+
+The search changes the orientation only by moves that keep the labels. The
+reversal of a directed cycle keeps every charge. The reversal of a directed
+path moves charge from its last vertex to its first. The search has these
+moves:
+
+- A short cycle is one square of the lattice, or two parallel links.
+- A worm walk reverses one link and then follows the arrows out of the vertex
+  that is now short. At each step it takes the cheapest arrow. It stops when
+  the gap closes or when it reaches the free boundary of adapted P. A walk of
+  more than 64 links is undone.
+- A repair reverses the shortest directed path from a pin that is short to a
+  pin with an excess, or to the free boundary.
+
+Before the search keeps a move, it checks each vertex that the move touches.
+No labeled vertex can move further from its label. The charge that the free
+boundary gains must equal the charge that the labeled vertices lose. After
+each kept move, the search checks the whole orientation directly. It compares
+the label gaps and the cost with its running values. It also compares each
+charge. A difference is an error.
+
+The policy is `flow-loops-nat/1`. It has the structure of `nat_loop` in the
+research `descent.py`. Each read first runs the repairs and a steepest descent
+over the short cycles. Then rounds of worm descent, repair, and steepest
+descent follow, until a round does not change the score. A read runs at most
+10 rounds. The worm descent follows `loop_descent` in the research
+`greedy.c`. It visits every link in a random order. It keeps a walk that
+lowers the score. It also keeps a walk that does not change the score, while
+a budget of 4 links per link lasts. The score is the sum of the squared label
+gaps, then the cost. That order is the order of the instance energy.
+
+When a job carries initial states, the search starts from each of them.
+Without them, each read starts from the exact baseline of `quip-cpu-flow`, and
+the job seed drives the search. Each job returns one state per start, in start
+order. Result `k` comes from start `k`. The sampler rescores each result
+from the job graph.
+
+The search runs against a declared budget of host time per job. Plan 2 gives
+each B family the postprocess allowance of its paired A cell: 0.25 s for
+`ice-charge`, `ice-fields-h500`, and `ice-fields-h1000`, and 0.05 s for
+`two-commodity-routing`. A job does not name its pair, so the default is 0.25
+s and the `backend_toml` key `budget_s` sets another budget. A value outside 0
+to 60 seconds stops the binary at handshake. The budget counts from the start
+of the job, so the setup counts against it. The job log records the declared
+budget beside the measured time, with one record per read. The budget is a
+limit, and a read that converges stops early. Read `k` of `n` has until `(k +
+1) / n` of the budget. If the budget runs out first, a later read keeps its
+start as its result. The time limit makes the result depend on the host. Only
+a fixed-work run is reproducible.
+
+Every move keeps or lowers the squared label gaps. So a read that reaches a
+feasible state keeps every label from then on, and its later moves are loops
+or boundary strings only. The log counts short-cycle, worm, and repair moves
+apart. The binary declines every job without a listed family with
+`NO_SOLUTION`, as `quip-cpu-flow` does.
+
+`tests/flow_loops.rs` scores every state of side-2 instances of both families
+against the instance energy. It checks the change of each short cycle against
+a direct score. It then searches from every side-2 state, and it checks the
+charges, the labels, and the exact rescore after each kept move. A periodic
+side-2 lattice tests parallel links. Other tests reject bad boundary labels,
+bad link positions, and bad starts. A fixed-work run must match
+`tests/fixtures/flow_loops_golden.json`. A timed run must record its host time
+and a result for every start, and setup time must count against the budget. To record the golden output again, set
+`QUIP_FLOW_LOOPS_BLESS=1` and run the test. `tests/flow_loops_conformance.rs`
+runs the family gate.
+
+`quip-cpu-dipolar` searches static defect patterns. Its `solver_id` is
+`quip-cpu-dipolar/1`, its algorithm is `dipolar`, and its policy is
+`dipolar-strings/1`. It generates and accepts `quip/defects-static`
+revision 1, which allows the sides 2 and 3. The tests cover those two sides.
+The binary advertises `initial-spins`. It declines every other job with
+`NO_SOLUTION`, as `quip-cpu-flow` does, because a plain model and every
+unlisted family reach it with no D-static structure.
+
+`families::dipolar_search` is a new search. No research solver exists for this
+family. Each move flips a list of link ids. The move is either a loop, which
+is a directed cycle, or a string, which is a directed path between two free
+boundary vertices. No move flips a pinned link, so every labeled charge stays
+the same. A move may pass through an obstacle, because an obstacle is a vertex
+with the label 0. Only a route witness of the family must avoid obstacles. The
+search checks each move directly before it scores the move. It keeps the local
+field of each node and updates the score with checked integer arithmetic. The
+Metropolis rule decides on the exact integer change. At the end of each read,
+the search computes the score again from the coefficients. It also computes
+the physical energy from the dipolar table and checks every constraint. The
+sampler then compares the score with the canonical score of the job graph. A
+job fails when any check fails.
+
+A job without states runs the search mode. Each read starts from the
+reference state, with every link spin `+1`. Paths between opposite labels fix
+the labels of that state. A job with states runs the postprocess mode. The
+search repairs each infeasible supplied state, and then searches it. The
+result keeps a state that no path can repair without a change. The result holds the final
+state of every read, in order. Read `r` seeds its generator from the job seed
+and `r`. The instance nonce never seeds the search.
+
+By default each read does a fixed amount of work: `num_sweeps` proposals for
+each link. The `backend_toml` key `budget_seconds` sets a declared budget of
+elapsed time for each read. The job log records the declared budget apart
+from the measured time and the work done. The log also records the rounding
+bound of the table, which is one milli for each kept coupling. An improvement
+inside that bound is not resolved.
+
+The dipolar table of revision 1 has the oracle calibration. It supports no
+physical claim. The key `evidence = "physical"` asks for a physical claim.
+The binary then declines every family job with the reason
+`insufficient physical evidence`. The default `evidence = "analytic"` runs
+every job.
+
+`tests/dipolar_search.rs` checks all 4096 states of four lattices with
+`L = 2` against the feasibility hook, the observables, and the energy of the
+family. It checks every proposal from each state against a full
+recomputation. It also checks analytic fixtures with a charged center, the
+admission of invalid requests and instances, the direct check of invalid
+moves and routes, both work modes, and a golden output for a fixed seed.
 
 ## Running
 
@@ -376,6 +759,32 @@ cargo test --release
 
 Conformance/golden and handshake tests drive the binary in isolation via
 `quip-solver-conformance` and check energies against `conformance/golden_vectors.json`.
+
+## Continuous integration
+
+The Linux jobs run on a toolchain image that
+`.gitlab/ci-toolchain.Dockerfile` defines. The image holds Rust 1.97.1 with
+clippy and rustfmt, the aarch64 target and cross linker, and a Python virtual
+environment with maturin, numpy, and pytest. The jobs install nothing.
+
+The jobs pull the image by digest, from `TOOLCHAIN_IMAGE` in `.gitlab-ci.yml`.
+To change the image:
+
+1. Edit the Dockerfile and push the branch. A branch push that changes the
+   Dockerfile runs the `build-toolchain-image` job. On other pipelines the job
+   is manual.
+2. Copy the `TOOLCHAIN_IMAGE=...` line that the job prints into
+   `.gitlab-ci.yml`, and commit it.
+
+Run the job by hand to pick up a new base image or Python package without a
+Dockerfile change. The build context is empty, so a `Cargo.lock` change never
+needs a rebuild.
+
+The cargo cache key is the job name and a hash of the lockfile. The runners
+store caches locally, in one volume for each concurrent job slot, so a job
+finds its cache only when it runs in the slot that saved it. A shared cache
+removes that limit: configure `[runners.cache]` with an S3-compatible store
+on each runner, or mount one host directory as `/cache` for every slot.
 
 ## License
 

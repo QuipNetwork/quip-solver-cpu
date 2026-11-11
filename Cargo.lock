@@ -601,8 +601,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 [[package]]
 name = "ising-generators"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35b620853a53dc807601c7b5bc26b3161c8d0e73c97d7f3f63657a3e524979f5"
+source = "git+https://gitlab.com/quip.network/quip-solver-core.git?rev=38f485386dc44f379641a62b98278726050f484c#38f485386dc44f379641a62b98278726050f484c"
 dependencies = [
  "blake3",
  "miniz_oxide",
@@ -825,8 +824,7 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 [[package]]
 name = "quip-proto"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1635e87e85d07131e095795a052060e19a91b5a8c4ed02aaf3fe31bbc0e41479"
+source = "git+https://gitlab.com/quip.network/quip-solver-core.git?rev=38f485386dc44f379641a62b98278726050f484c#38f485386dc44f379641a62b98278726050f484c"
 dependencies = [
  "prost",
  "tonic",
@@ -835,8 +833,7 @@ dependencies = [
 [[package]]
 name = "quip-protocol"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47ff4574ad1ddf327d7c3327cf334c58c2714d004760a24035d07abb16a0f1f8"
+source = "git+https://gitlab.com/quip.network/quip-solver-core.git?rev=38f485386dc44f379641a62b98278726050f484c#38f485386dc44f379641a62b98278726050f484c"
 dependencies = [
  "ising-generators",
  "quip-proto",
@@ -845,8 +842,7 @@ dependencies = [
 [[package]]
 name = "quip-solver-conformance"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a13b1ef75e7a6cbc9e540529db02733f3d157fd7d98838b7f42b80879e43e0"
+source = "git+https://gitlab.com/quip.network/quip-solver-core.git?rev=38f485386dc44f379641a62b98278726050f484c#38f485386dc44f379641a62b98278726050f484c"
 dependencies = [
  "hyper-util",
  "ising-generators",
@@ -864,8 +860,7 @@ dependencies = [
 [[package]]
 name = "quip-solver-core"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3da932a5ccd6d7e11958abdc33a12a2f7bf3d66bc628bea0ac43d6f41abba01f"
+source = "git+https://gitlab.com/quip.network/quip-solver-core.git?rev=38f485386dc44f379641a62b98278726050f484c#38f485386dc44f379641a62b98278726050f484c"
 dependencies = [
  "base64",
  "clap",

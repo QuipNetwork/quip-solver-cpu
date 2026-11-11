@@ -132,6 +132,42 @@ name = "quip-cpu-pairworm"
 path = "src/bin/quip_cpu_pairworm.rs"
 required-features = ["experimental"]
 
+[[bin]]
+name = "quip-cpu-dimer"
+path = "src/bin/quip_cpu_dimer.rs"
+required-features = ["experimental"]
+
+[[bin]]
+name = "quip-cpu-flow"
+path = "src/bin/quip_cpu_flow.rs"
+required-features = ["experimental"]
+
+[[bin]]
+name = "quip-cpu-tileworm"
+path = "src/bin/quip_cpu_tileworm.rs"
+required-features = ["experimental"]
+
+[[bin]]
+name = "quip-cpu-gadget-repair"
+path = "src/bin/quip_cpu_gadget_repair.rs"
+required-features = ["experimental"]
+
+[[bin]]
+name = "quip-cpu-routing"
+path = "src/bin/quip_cpu_routing.rs"
+required-features = ["experimental"]
+
+# Constrained loop search on the square-link families. Experimental track.
+[[bin]]
+name = "quip-cpu-flow-loops"
+path = "src/bin/quip_cpu_flow_loops.rs"
+required-features = ["experimental"]
+
+[[bin]]
+name = "quip-cpu-dipolar"
+path = "src/bin/quip_cpu_dipolar.rs"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes
@@ -174,11 +210,13 @@ large-futures         = "deny"
 exit                  = "deny"
 mem-forget            = "deny"
 
-# The Quip solver contract, published from crates.io (quip.network/quip-solver-core).
+# The Quip solver contract (quip.network/quip-solver-core). Pinned to the
+# commit that adds the defects and flow families and the algorithm values of
+# the CPU family solvers, until quip-solver-core 0.0.9 is on crates.io.
 [dependencies]
-quip-proto = "0.0.8"
-quip-protocol = "0.0.8"
-quip-solver-core = "0.0.8"
+quip-proto = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
+quip-protocol = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
+quip-solver-core = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync"] }
@@ -192,5 +230,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 proptest = "1.11.0"
-quip-solver-conformance = "0.0.8"
+quip-solver-conformance = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync", "process"] }
