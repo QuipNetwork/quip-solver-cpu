@@ -39,68 +39,133 @@ impl Breakup {
     }
 }
 
-const NONE: usize = usize::MAX;
-
-/// Union-find and component lists, reused across sweeps.
+/// Union-find and component lists, reused across sweeps. Components are
+/// numbered densely in the order of their smallest node.
 #[derive(Debug)]
 struct Workspace {
-    parent: Vec<usize>,
-    size: Vec<usize>,
-    label: Vec<usize>,
-    head: Vec<usize>,
-    next: Vec<usize>,
+    parent: Vec<u32>,
+    /// The component of each node.
+    label: Vec<u32>,
+    /// The nodes of component `c` are `members[start[c]..start[c + 1]]`.
+    start: Vec<u32>,
+    members: Vec<u32>,
     /// The weak-energy change of flipping each component.
     delta: Vec<i64>,
-    roots: Vec<usize>,
+    /// Boltzmann factors of the current Metropolis sweep.
+    boltzmann: Boltzmann,
+    /// The local field of each node over every coupling, `sum J s_v`,
+    /// patched at each flip.
+    field: Vec<i64>,
+}
+
+/// A direct-mapped cache of `exp(-beta * delta / 1000)` at one beta. The
+/// moves of a sweep take few distinct energy changes, so most lookups hit,
+/// and a hit returns the same value the call would.
+#[derive(Debug)]
+struct Boltzmann {
+    keys: [i64; Self::SLOTS],
+    values: [f64; Self::SLOTS],
+}
+
+impl Boltzmann {
+    const SLOTS: usize = 256;
+
+    fn new() -> Self {
+        Self {
+            keys: [i64::MIN; Self::SLOTS],
+            values: [0.0; Self::SLOTS],
+        }
+    }
+
+    /// Forget every entry, before a sweep at a new beta.
+    fn clear(&mut self) {
+        self.keys.fill(i64::MIN);
+    }
+
+    fn get(&mut self, delta: i64, beta: f64) -> f64 {
+        // Energy changes are even, so the low bit carries no information.
+        let slot = ((delta >> 1) as usize) % Self::SLOTS;
+        if self.keys[slot] != delta {
+            self.keys[slot] = delta;
+            self.values[slot] = (-beta * delta as f64 / 1000.0).exp();
+        }
+        self.values[slot]
+    }
 }
 
 impl Workspace {
     fn new(n: usize) -> Self {
         Self {
             parent: vec![0; n],
-            size: vec![1; n],
             label: vec![0; n],
-            head: vec![NONE; n],
-            next: vec![NONE; n],
-            delta: vec![0; n],
-            roots: Vec::with_capacity(n),
+            start: Vec::with_capacity(n + 1),
+            members: vec![0; n],
+            delta: Vec::with_capacity(n),
+            boltzmann: Boltzmann::new(),
+            field: vec![0; n],
         }
     }
 
-    fn find(&mut self, mut u: usize) -> usize {
-        while self.parent[u] != u {
-            let grand = self.parent[self.parent[u]];
-            self.parent[u] = grand;
+    /// Recompute every local field from `s`.
+    fn set_fields(&mut self, graph: &OtsukaGraph, s: &[i8]) {
+        for (u, field) in self.field.iter_mut().enumerate() {
+            *field = graph
+                .all
+                .row(u)
+                .iter()
+                .map(|&link| i64::from(link.j()) * i64::from(s[link.node()]))
+                .sum();
+        }
+    }
+
+    /// Flip node `u`, patch the local fields of its neighbours, and return
+    /// the model energy change in milli.
+    #[inline]
+    fn flip(&mut self, graph: &OtsukaGraph, s: &mut [i8], u: usize) -> i64 {
+        let twice = 2 * i64::from(s[u]);
+        for &link in graph.all.row(u) {
+            self.field[link.node()] -= twice * i64::from(link.j());
+        }
+        s[u] = -s[u];
+        -twice * self.field[u]
+    }
+
+    fn find(&mut self, mut u: u32) -> u32 {
+        loop {
+            let up = self.parent[u as usize];
+            if up == u {
+                return u;
+            }
+            let grand = self.parent[up as usize];
+            self.parent[u as usize] = grand;
             u = grand;
         }
-        u
     }
 
-    fn join(&mut self, a: usize, b: usize) {
-        let mut a = self.find(a);
-        let mut b = self.find(b);
-        if a == b {
-            return;
+    /// Join the sets of `a` and `b`. The smaller root becomes the parent,
+    /// so `parent[u] <= u` holds for every node, which the labelling in
+    /// [`Self::partition`] relies on.
+    fn join(&mut self, a: u32, b: u32) {
+        let a = self.find(a);
+        let b = self.find(b);
+        if a < b {
+            self.parent[b as usize] = a;
+        } else if b < a {
+            self.parent[a as usize] = b;
         }
-        if self.size[a] < self.size[b] {
-            std::mem::swap(&mut a, &mut b);
-        }
-        self.parent[b] = a;
-        self.size[a] += self.size[b];
     }
 
     /// Draw the bonds of every tile and pair, then list the components.
     fn partition(&mut self, graph: &OtsukaGraph, s: &[i8], p: &Breakup, rng: &mut SmallRng) {
-        for u in 0..graph.n {
-            self.parent[u] = u;
-            self.size[u] = 1;
+        for (u, parent) in self.parent.iter_mut().enumerate() {
+            *parent = u as u32;
         }
         for tile in &graph.tiles {
             let mut up = [0; 4];
             let mut down = [0; 4];
             let (mut ups, mut downs) = (0, 0);
             for k in 0..4 {
-                if s[tile.nodes[k]] * tile.gauge[k] > 0 {
+                if s[tile.nodes[k] as usize] * tile.gauge[k] > 0 {
                     up[ups] = tile.nodes[k];
                     ups += 1;
                 } else {
@@ -133,24 +198,45 @@ impl Workspace {
             }
         }
         for &(u, v) in &graph.pairs {
-            if s[u] == s[v] && rng.gen::<f64>() < p.pair_link {
+            if s[u as usize] == s[v as usize] && rng.gen::<f64>() < p.pair_link {
                 self.join(u, v);
             }
         }
-        self.head.fill(NONE);
-        self.roots.clear();
-        for u in 0..graph.n {
-            let root = self.find(u);
-            self.label[u] = root;
-            if self.head[root] == NONE {
-                self.roots.push(root);
-            }
-            self.next[u] = self.head[root];
-            self.head[root] = u;
+        // Number the components, count their nodes, then list the nodes.
+        // A join hooks the larger root under the smaller, and path halving
+        // only moves a node closer to its root, so `parent[u] <= u` holds
+        // and every root is the smallest node of its component. One pass in
+        // node order then numbers the components by their smallest node and
+        // finds each label at the parent, which the pass has already seen.
+        self.start.clear();
+        self.start.push(0);
+        for u in 0..self.parent.len() {
+            let up = self.parent[u] as usize;
+            let c = if up == u {
+                self.start.push(0);
+                (self.start.len() - 2) as u32
+            } else {
+                self.label[up]
+            };
+            self.label[u] = c;
+            self.start[c as usize + 1] += 1;
+        }
+        for c in 1..self.start.len() {
+            self.start[c] += self.start[c - 1];
+        }
+        let components = self.start.len() - 1;
+        // `delta` doubles as the fill cursor of each component's list.
+        self.delta.clear();
+        self.delta
+            .extend(self.start[..components].iter().map(|&at| i64::from(at)));
+        for (u, &c) in self.label.iter().enumerate() {
+            let at = &mut self.delta[c as usize];
+            self.members[*at as usize] = u as u32;
+            *at += 1;
         }
     }
 
-    /// One cluster sweep. Returns the weak-energy change in milli.
+    /// One cluster sweep. Returns the model energy change in milli.
     fn cluster_sweep(
         &mut self,
         graph: &OtsukaGraph,
@@ -161,41 +247,39 @@ impl Workspace {
         let p = Breakup::new(beta, graph.weights);
         self.partition(graph, s, &p, rng);
         // delta[c] = -2 * sum over the weak edges that leave c of J s_u s_v.
-        for &root in &self.roots {
-            self.delta[root] = 0;
-        }
-        for &(u, v, j) in &graph.weak_edges {
-            let (lu, lv) = (self.label[u], self.label[v]);
+        self.delta.fill(0);
+        let (label, delta) = (&self.label, &mut self.delta);
+        for &(u, link) in &graph.weak_edges {
+            let v = link.node();
+            let (lu, lv) = (label[u as usize], label[v]);
             if lu != lv {
-                let t = -2 * i64::from(j) * i64::from(s[u] * s[v]);
-                self.delta[lu] += t;
-                self.delta[lv] += t;
+                let t = -2 * i64::from(link.j()) * i64::from(s[u as usize] * s[v]);
+                delta[lu as usize] += t;
+                delta[lv as usize] += t;
             }
         }
         let mut change = 0;
-        // Heat bath in the order the components were found. A flip changes
-        // the sign of every edge that leaves the component, so the deltas of
-        // its neighbours are patched before the next component draws.
-        for at in 0..self.roots.len() {
-            let root = self.roots[at];
-            let d = self.delta[root];
+        // Heat bath in the order of the components' smallest nodes. A flip
+        // changes the sign of every edge that leaves the component, so the
+        // deltas of its neighbours are patched before the next one draws.
+        for c in 0..self.delta.len() {
+            let d = self.delta[c];
             if !heat_bath(beta * d as f64 / 1000.0, rng) {
                 continue;
             }
-            change += d;
-            let mut u = self.head[root];
-            while u != NONE {
+            for at in self.start[c] as usize..self.start[c + 1] as usize {
+                let u = self.members[at] as usize;
                 let su = i64::from(s[u]);
-                for (v, j) in graph.weak.row(u) {
-                    let lv = self.label[v];
-                    if lv != root {
-                        self.delta[lv] += 4 * i64::from(j) * su * i64::from(s[v]);
+                for &link in graph.weak.row(u) {
+                    let v = link.node();
+                    let lv = self.label[v] as usize;
+                    if lv != c {
+                        self.delta[lv] += 4 * i64::from(link.j()) * su * i64::from(s[v]);
                     }
                 }
-                s[u] = -s[u];
-                u = self.next[u];
+                change += self.flip(graph, s, u);
             }
-            self.delta[root] = -d;
+            self.delta[c] = -d;
         }
         change
     }
@@ -262,23 +346,19 @@ impl<'g> Chain<'g> {
     /// [`SpinError`] when `spins` does not fit the graph.
     pub fn new(graph: &'g OtsukaGraph, spins: Vec<i8>) -> Result<Self, SpinError> {
         check_spins(graph, &spins)?;
-        Ok(Self {
-            graph,
-            spins,
-            work: Workspace::new(graph.n),
-        })
+        let mut work = Workspace::new(graph.n);
+        work.set_fields(graph, &spins);
+        Ok(Self { graph, spins, work })
     }
 
     /// A chain on `graph` at a uniformly random state drawn from `rng`.
     pub(crate) fn random(graph: &'g OtsukaGraph, rng: &mut SmallRng) -> Self {
         let spins = (0..graph.n)
             .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
-            .collect();
-        Self {
-            graph,
-            spins,
-            work: Workspace::new(graph.n),
-        }
+            .collect::<Vec<i8>>();
+        let mut work = Workspace::new(graph.n);
+        work.set_fields(graph, &spins);
+        Self { graph, spins, work }
     }
 
     /// Move the chain to `spins`.
@@ -290,6 +370,7 @@ impl<'g> Chain<'g> {
     pub fn reset(&mut self, spins: &[i8]) -> Result<(), SpinError> {
         check_spins(self.graph, spins)?;
         self.spins.copy_from_slice(spins);
+        self.work.set_fields(self.graph, spins);
         Ok(())
     }
 
@@ -300,7 +381,7 @@ impl<'g> Chain<'g> {
     }
 
     /// One cluster sweep at `beta`, in inverse units of 1000 milli. `beta`
-    /// must be finite and positive. Returns the weak-energy change in milli.
+    /// must be finite and positive. Returns the model energy change in milli.
     pub fn cluster_sweep(&mut self, beta: f64, rng: &mut SmallRng) -> i64 {
         self.work
             .cluster_sweep(self.graph, &mut self.spins, beta, rng)
@@ -309,19 +390,13 @@ impl<'g> Chain<'g> {
     /// One Metropolis sweep over every node in index order at `beta`.
     /// Returns the model energy change in milli.
     pub fn single_sweep(&mut self, beta: f64, rng: &mut SmallRng) -> i64 {
-        let s = &mut self.spins;
+        let (graph, s, work) = (self.graph, &mut self.spins, &mut self.work);
         let mut change = 0;
-        for u in 0..self.graph.n {
-            let field: i64 = self
-                .graph
-                .all
-                .row(u)
-                .map(|(v, j)| i64::from(j) * i64::from(s[v]))
-                .sum();
-            let delta = -2 * i64::from(s[u]) * field;
-            if delta <= 0 || rng.gen::<f64>() < (-beta * delta as f64 / 1000.0).exp() {
-                s[u] = -s[u];
-                change += delta;
+        work.boltzmann.clear();
+        for u in 0..graph.n {
+            let delta = -2 * i64::from(s[u]) * work.field[u];
+            if delta <= 0 || rng.gen::<f64>() < work.boltzmann.get(delta, beta) {
+                change += work.flip(graph, s, u);
             }
         }
         change

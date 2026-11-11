@@ -25,7 +25,9 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use std::fmt;
 
-pub use graph::{GraphError, Model, Motifs, OtsukaGraph, Weights, PAIR_MILLI, STRONG_MILLI};
+pub use graph::{
+    GraphError, Model, Motifs, OtsukaGraph, Weights, MAX_NODES, PAIR_MILLI, STRONG_MILLI,
+};
 pub use update::{Chain, SpinError};
 
 /// Why a schedule cannot drive an anneal.
@@ -122,17 +124,14 @@ pub fn anneal(
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut chain = Chain::random(graph, &mut rng);
     let mut energy = graph.energy(chain.spins());
-    let mut weak = graph.weak_energy(chain.spins());
     let mut best = (chain.spins().to_vec(), energy);
     for (sweep, &beta) in schedule.betas.iter().enumerate() {
         if cancel.is_some_and(|(token, watermark)| token.is_cancelled(watermark)) {
             return Err(AnnealError::Cancelled);
         }
-        weak += chain.cluster_sweep(beta, &mut rng);
-        energy = weak + graph.strong_energy(chain.spins());
+        energy += chain.cluster_sweep(beta, &mut rng);
         if schedule.single_every > 0 && (sweep + 1).is_multiple_of(schedule.single_every) {
             energy += chain.single_sweep(beta, &mut rng);
-            weak = energy - graph.strong_energy(chain.spins());
         }
         if energy < best.1 {
             best.0.copy_from_slice(chain.spins());
