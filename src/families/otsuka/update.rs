@@ -387,6 +387,13 @@ impl<'g> Chain<'g> {
             .cluster_sweep(self.graph, &mut self.spins, beta, rng)
     }
 
+    /// Flip every node of `nodes` once. Returns the model energy change in
+    /// milli.
+    pub(crate) fn flip_nodes(&mut self, nodes: &[u32]) -> i64 {
+        let (graph, s, work) = (self.graph, &mut self.spins, &mut self.work);
+        nodes.iter().map(|&u| work.flip(graph, s, u as usize)).sum()
+    }
+
     /// One Metropolis sweep over every node in index order at `beta`.
     /// Returns the model energy change in milli.
     pub fn single_sweep(&mut self, beta: f64, rng: &mut SmallRng) -> i64 {

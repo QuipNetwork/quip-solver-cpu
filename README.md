@@ -164,9 +164,17 @@ it. The kernel then reads the tiles, gauges, and pairs from the instance and
 anneals with the job's beta ladder. Each sweep is one cluster sweep and one
 Metropolis sweep. The cluster draw takes 250 of the 1,000 milli of each pair
 coupling, and the heat bath scores the rest, as in the research solver. A job
-without a beta range anneals from beta 0.5 to 12 per full coupler, the range
-the research schedule study selected. Every other
-job, and every family job that does not fit the kernel, runs on the SA kernel.
+without a beta range anneals from beta 1 to 12 per full coupler, the range
+that schedule studies on the 1,200-pair and 1,350-pair cells selected. The
+job's reads anneal as one population. 1,024 times over the schedule, the
+kernel resamples the replicas by their Boltzmann weight at the current beta,
+so low-energy states take over the sweeps of high-energy ones. From beta 3,
+the kernel pairs the replicas at random after each sweep, and each pair takes
+a Houdayer move: it swaps one connected cluster of the nodes where the two
+states differ. The swap keeps the sum of the two energies, so the move needs
+no acceptance test. At equal sweeps this reaches lower energies on the
+registered twisted-dimer cells than independent anneals. Every other job, and
+every family job that does not fit the kernel, runs on the SA kernel.
 `tests/family_conformance.rs` runs the family gate and the plain-job
 conformance against the binary.
 
