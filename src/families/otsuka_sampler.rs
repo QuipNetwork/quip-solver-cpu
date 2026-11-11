@@ -19,7 +19,9 @@ use quip_solver_core::{
     StreamResult, WarmStart, WarmStreamJob,
 };
 
-use super::otsuka::{anneal, AnnealError, Model, Motifs, OtsukaGraph, Schedule, Weights};
+use super::otsuka::{
+    anneal_population, AnnealError, Model, Motifs, OtsukaGraph, Schedule, Weights,
+};
 use crate::sampler_core::{
     build_beta_schedule, effective_sweeps_per_beta, sample_ising, sample_ising_cancellable,
 };
@@ -49,10 +51,12 @@ const TWISTED_DIMER: &[FamilyClaim] = &[FamilyClaim {
 
 /// The anneal ends, per full coupler, for a family job that names no beta
 /// range. A schedule study on the `x-w62-p1200` cell (seven ranges, eight
-/// seeds, two models, 65,536-sweep anneals) found no range better than 0.5
-/// to 12. The default SA range of these models, about 0.044 to 105, spends
-/// three fifths of a geometric ladder outside that band.
-const FAMILY_BETA_RANGE: (f64, f64) = (0.5, 12.0);
+/// seeds, two models, 65,536-sweep anneals) chose 12 as the top. Under
+/// the population anneal at 10 replicas of 32,768 sweeps, a start of 1
+/// instead of 0.5 won 26 of 28 runs against 12 of 16 on the `x-w62-p1350`
+/// cell. The default SA range of these models, about 0.044 to 105, spends
+/// most of a geometric ladder outside that band.
+const FAMILY_BETA_RANGE: (f64, f64) = (1.0, 12.0);
 
 /// The bond weights of the research solver: the cluster draw takes a
 /// quarter of each pair coupling, and the heat bath scores the rest.
@@ -173,8 +177,8 @@ fn sweep_betas(graph: &IsingGraph, params: &SampleParams) -> Vec<f64> {
         .collect()
 }
 
-/// `params.num_reads` Otsuka anneals of a family job, or `None` when the job
-/// must run on the SA kernel instead.
+/// A population anneal of `params.num_reads` replicas on a family job, or
+/// `None` when the job must run on the SA kernel instead.
 fn otsuka_reads(
     graph: &IsingGraph,
     params: &SampleParams,
@@ -190,15 +194,19 @@ fn otsuka_reads(
             return None;
         }
     };
-    let reads = (0..params.num_reads)
-        .map(|read| {
-            let seed = params.seed.wrapping_add(read as u64);
-            anneal(&prepared, &schedule, seed, cancel).map(|sample| SamplerResult {
-                spins: sample.spins,
-                energy_milli: sample.energy_milli,
-            })
-        })
-        .collect();
+    // The reads anneal as one population, so the sweeps go to the replicas
+    // that are already low.
+    let reads = anneal_population(&prepared, &schedule, params.num_reads, params.seed, cancel).map(
+        |samples| {
+            samples
+                .into_iter()
+                .map(|sample| SamplerResult {
+                    spins: sample.spins,
+                    energy_milli: sample.energy_milli,
+                })
+                .collect()
+        },
+    );
     Some(reads)
 }
 

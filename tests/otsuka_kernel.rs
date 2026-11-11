@@ -7,8 +7,8 @@
 
 use quip_solver_core::CancelToken;
 use quip_solver_cpu::families::otsuka::{
-    anneal, AnnealError, Chain, GraphError, Model, Motifs, OtsukaGraph, Schedule, ScheduleError,
-    SpinError, Weights,
+    anneal, anneal_population, AnnealError, Chain, GraphError, Model, Motifs, OtsukaGraph,
+    Schedule, ScheduleError, SpinError, Weights,
 };
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -656,4 +656,43 @@ fn malformed_motifs_are_refused() {
     for (name, fixture, want) in cases {
         assert_eq!(fixture.graph(Weights::FULL).unwrap_err(), want, "{name}");
     }
+}
+
+#[test]
+fn a_population_anneal_reaches_the_ground_state_with_exact_energies() {
+    let fixture = corner_sharing();
+    let graph = fixture.graph(Weights::FULL).unwrap();
+    let ground = states(fixture.num_nodes())
+        .map(|s| fixture.direct_energy(&s))
+        .min()
+        .unwrap();
+    let betas = geometric(0.1, 8.0, 500);
+    let schedule = Schedule::new(&betas, 4).unwrap();
+    for seed in 0..4 {
+        let samples = anneal_population(&graph, &schedule, 6, seed, None).unwrap();
+        assert_eq!(samples.len(), 6);
+        for sample in &samples {
+            assert_eq!(sample.energy_milli, fixture.direct_energy(&sample.spins));
+            assert_eq!(sample.sweeps, betas.len());
+        }
+        let lowest = samples.iter().map(|s| s.energy_milli).min().unwrap();
+        assert_eq!(lowest, ground, "seed {seed}");
+    }
+}
+
+#[test]
+fn a_population_anneal_repeats_for_a_seed_and_stops_on_cancel() {
+    let fixture = corner_sharing();
+    let graph = fixture.graph(Weights::FULL).unwrap();
+    let betas = geometric(0.1, 2.0, 600);
+    let schedule = Schedule::new(&betas, 1).unwrap();
+    let first = anneal_population(&graph, &schedule, 5, 99, None).unwrap();
+    let again = anneal_population(&graph, &schedule, 5, 99, None).unwrap();
+    assert_eq!(first, again);
+    let token = CancelToken::default();
+    token.cancel_through(3);
+    assert_eq!(
+        anneal_population(&graph, &schedule, 5, 1, Some((&token, Some(3)))),
+        Err(AnnealError::Cancelled)
+    );
 }
