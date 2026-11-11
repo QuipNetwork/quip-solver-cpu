@@ -410,8 +410,10 @@ QUIP_TILEWORM_PARITY=OUT cargo test --release --features experimental \
 `quip-cpu-gadget-repair` is a postprocess for routing jobs. Its `solver_id`
 is `quip-cpu-gadget-repair/1`, its algorithm is `gadget-repair`, and its
 policy is `gadget-repair/1`. It advertises `initial-spins`. It accepts
-`quip/two-commodity-routing` revision 1 jobs of any parameter set. It
-generates no family work. Every other job runs the `greedy-nat/1` descent.
+`quip/two-commodity-routing` revision 1 jobs with the `r32` parameters, the
+one registered recipe, on which the research tuned the 0.05 s budget and the
+repair options. The core rejects a job with other parameters as
+`FAMILY_UNSUPPORTED`. The binary generates no family work. Every other job runs the `greedy-nat/1` descent.
 This keeps the binary useful for plain and warm jobs, as the other
 postprocess binaries do. The binary declines a routing job with a malformed
 structure, gives the reason, and touches no state.

@@ -1,12 +1,13 @@
 //! The `quip-cpu-gadget-repair` sampler: the `gadget-repair/1` postprocess
 //! for routing jobs.
 //!
-//! A `quip/two-commodity-routing` revision 1 job runs the schedule against
-//! its declared budget on the supplied states. It returns the final state
-//! first, then the repaired state of each start, in start order. Every
-//! returned state is rescored from the job graph. The schedule seeds from the
-//! job seed. The job log reports the direct defects of the final state and of
-//! the best supplied state: a lower energy never stands for feasibility.
+//! A `quip/two-commodity-routing` revision 1 job with the `r32` parameters
+//! runs the schedule against its declared budget on the supplied states. It
+//! returns the final state first, then the repaired state of each start, in
+//! start order. Every returned state is rescored from the job graph. The
+//! schedule seeds from the job seed. The job log reports the direct defects
+//! of the final state and of the best supplied state: a lower energy never
+//! stands for feasibility.
 //!
 //! Every other job runs the `greedy-nat/1` descent of `quip-cpu-greedy`, so
 //! the binary still serves plain and warm-start jobs. A routing job that
@@ -20,7 +21,7 @@ use std::sync::Arc;
 use quip_protocol::scoring::energy_milli;
 use quip_solver_core::families::{Declaration, FamilyClaim, FamilyContext};
 use quip_solver_core::ising_generators::instance::Instance;
-use quip_solver_core::ising_generators::routing::{RoutingDefects, ROUTING_V1};
+use quip_solver_core::ising_generators::routing::{RoutingDefects, ROUTING_RECIPES, ROUTING_V1};
 use quip_solver_core::{
     BackendIdentity, CancelToken, IsingGraph, SampleError, SampleParams, Sampler, SamplerResult,
     StreamResult, WarmStart, WarmStreamJob,
@@ -51,12 +52,15 @@ pub const CPU_GADGET_REPAIR_IDENTITY: BackendIdentity = BackendIdentity {
     limits: crate::F64_LIMITS,
 };
 
-/// The binary accepts explicit routing jobs of revision 1 for their chain and
-/// commodity mapping. It generates no family work: a lease salt carries no
-/// states to repair.
+/// The binary accepts explicit routing jobs of revision 1 with the `r32`
+/// parameters, for their chain and commodity mapping. The research tuned the
+/// 0.05 s budget and the repair options on `r32`, so the claim stops there; the
+/// core rejects any other parameter set as `FAMILY_UNSUPPORTED` before the
+/// sampler runs. It generates no family work: a lease salt carries no states
+/// to repair.
 const ACCEPTED: &[FamilyClaim] = &[FamilyClaim {
     revisions: &[ROUTING_V1],
-    only_params: &[],
+    only_params: &[ROUTING_RECIPES[0].params],
 }];
 
 /// The routing gadget repair, with the greedy descent for other jobs.

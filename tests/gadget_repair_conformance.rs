@@ -48,6 +48,10 @@ fn the_command_line_declares_the_gadget_repair_identity() {
         "{caps}"
     );
     assert_eq!(accepted[0]["revisions"], serde_json::json!([1]), "{caps}");
+    let digests = accepted[0]["paramsDigests"]
+        .as_array()
+        .expect("the r32 recipe only");
+    assert_eq!(digests.len(), 1, "{caps}");
     let features = caps["features"].as_array().expect("a feature list");
     assert!(
         features.iter().any(|f| f == INITIAL_SPINS_FEATURE),
@@ -111,26 +115,39 @@ async fn plain_jobs_pass_the_solve_conformance() {
     );
 }
 
-/// The family gate sends explicit routing jobs of the accepted revision.
+/// The family gate passes every session case. Its explicit cases build jobs
+/// from the reference routing params, z(2,4) and z(3,4), and the claim names
+/// only `r32`, on z(12,4). Admission gives both reference sets code 10
+/// (`ParamsRestricted`), so `explicit-supported` reports that no instance is
+/// accepted and the other explicit cases skip for the same reason.
 #[tokio::test]
-async fn the_family_gate_grades_the_binary_conformant() {
+async fn the_family_gate_passes_the_session_and_meets_the_r32_claim() {
     let _guard = GATE.lock().await;
     let report = drive_miner_family(BIN, &[], &socket("family")).await;
-    let failed: Vec<String> = report
-        .cases
-        .iter()
-        .filter(|case| matches!(case.outcome, CaseOutcome::Failed(_)))
-        .map(|case| format!("{case:?}"))
-        .collect();
-    assert!(
-        report.is_conformant(),
-        "the family gate failed (exit {}): {failed:#?}\n{}",
-        report.exit_code,
-        report.stderr
-    );
-    let names: Vec<&str> = report.cases.iter().map(|case| case.name).collect();
-    assert!(
-        names.contains(&"explicit-supported"),
-        "the gate ran no explicit job: {names:?}"
+    assert_eq!(report.exit_code, 0, "{}", report.stderr);
+    const RESTRICTED: &str = "no reference params set gives an explicit instance under the \
+        accepted claims (P_ROUTING_Z24_D4 gives code 10, P_ROUTING_Z34_D6 gives code 10)";
+    let mut explicit = 0;
+    for case in &report.cases {
+        if case.name.starts_with("explicit-") {
+            explicit += 1;
+            let reason = match &case.outcome {
+                CaseOutcome::Failed(reason) if case.name == "explicit-supported" => reason,
+                CaseOutcome::Skipped(reason) if case.name != "explicit-supported" => reason,
+                other => unreachable!("{}: {other:?}", case.name),
+            };
+            assert_eq!(reason, RESTRICTED, "{}", case.name);
+        } else {
+            assert!(
+                !matches!(case.outcome, CaseOutcome::Failed(_)),
+                "{case:?}\n{}",
+                report.stderr
+            );
+        }
+    }
+    assert_eq!(
+        explicit, 5,
+        "the gate ran no explicit cases: {:?}",
+        report.cases
     );
 }
