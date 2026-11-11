@@ -249,9 +249,15 @@ QUIP_PAIRWORM_PARITY=OUT cargo test --release --features experimental \
 
 `quip-cpu-dimer` runs the bounded weighted-dimer kernel. Its `solver_id` is
 `quip-cpu-dimer/1` and its algorithm is `weighted-dimer`. It generates and
-accepts `quip/twisted-ice-dimer` revision 1. The claim names the whole
-revision, because the research did not select the weighted kernel for one
-recipe. Every other job, such as a plain Ising job, runs on the SA kernel.
+accepts `quip/twisted-ice-dimer` revision 1. Every other job, such as a plain
+Ising job, runs on the SA kernel.
+
+The binary is not the selected solver of any registered recipe. On the
+registered twisted-dimer cells the research selects the Otsuka cluster
+anneal, which `quip-cpu-otsuka` runs. The claim still names the whole
+revision, as the Otsuka claim does. The research selects the weighted kernel
+for no recipe, and the kernel runs the job's own sweep count, so it holds no
+tuning to one recipe.
 
 `families::dimer_weighted` ports the research `dimer_weighted.rs` and its
 `ice.rs`. The binary runs the research variant `ice-loop64-weighted`. The
@@ -261,7 +267,10 @@ each tetrahedron as one block and picks the exact best state of the block. It
 last makes 64 attempts per read to flip an alternating loop or string of the
 ice layer. The kernel ports `ice-loop-weighted` and `ice-defect64-weighted` as
 well, but the binary does not run them. The path-block, contraction, polish,
-and tempering variants of the research are not ported. The fork-only cluster
+and tempering variants of the research are not ported, because the research
+selects none of them for a registered recipe. The tempering variant
+`pt-ice-band-strong-weighted` lost to the Otsuka anneal on the registered cell
+and is not planned. The fork-only cluster
 moves and wide bond counter of `sa_msc.rs` are not needed, because this kernel
 keeps its own integer fields.
 

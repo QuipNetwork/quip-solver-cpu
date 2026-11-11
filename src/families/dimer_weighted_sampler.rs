@@ -13,6 +13,13 @@
 //!
 //! Every returned state is rescored from the job graph, which is the original
 //! model: the kernel contracts nothing.
+//!
+//! This binary is not the selected solver of any registered recipe. On the
+//! registered twisted-dimer cells the research selects the Otsuka cluster
+//! anneal, which `quip-cpu-otsuka` runs. `ice-loop64-weighted` is the weighted
+//! loop method of the research QPU suite. The tempering variant
+//! `pt-ice-band-strong-weighted` lost to the Otsuka anneal on the registered
+//! cell and is not planned.
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -51,9 +58,11 @@ pub const CPU_DIMER_IDENTITY: BackendIdentity = BackendIdentity {
     limits: crate::F64_LIMITS,
 };
 
-/// Every parameter set of `quip/twisted-ice-dimer` revision 1. The research
-/// does not select the weighted kernel for one recipe, so the claim names the
-/// revision and the kernel rejects any instance it cannot run.
+/// Every parameter set of `quip/twisted-ice-dimer` revision 1, as
+/// `quip-cpu-otsuka` claims. The research selects the weighted kernel for no
+/// recipe, so restricting the claim to the registered recipes would add no
+/// truth. The kernel runs the job's own sweep count, so it holds no tuning to
+/// one recipe, and it rejects any instance it cannot run before sampling.
 const TWISTED_DIMER: &[FamilyClaim] = &[FamilyClaim {
     revisions: &[TWISTED_DIMER_V1],
     only_params: &[],
