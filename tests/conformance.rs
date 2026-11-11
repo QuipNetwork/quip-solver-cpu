@@ -213,6 +213,28 @@ fn capabilities_advertise_the_schedule_feature_and_limits() {
     }
 }
 
+/// The driver cancels `job-cancel` while it runs, so a fast sampler may still
+/// return its `Result` before the `Cancel` lands (`PERMITTED_RESULTS` in
+/// quip-solver-conformance). Any other result outside the five required jobs is
+/// a defect. The callers check that each required job has its result.
+fn assert_only_permitted_results(report: &DriverReport) {
+    const PERMITTED: [&[u8]; 6] = [
+        b"job-1",
+        b"job-2",
+        b"job-hash",
+        b"job-sparse",
+        b"job-seeded",
+        b"job-cancel",
+    ];
+    for id in report.result_job_ids() {
+        assert!(
+            PERMITTED.contains(&id.as_slice()),
+            "unexpected result for {}",
+            String::from_utf8_lossy(&id)
+        );
+    }
+}
+
 /// Cross-package binary path (deps/ → profile/ → bin). Cargo builds every
 /// binary target of the package before it runs an integration test, in the
 /// same profile and with the same features as the test.
@@ -242,11 +264,7 @@ async fn quip_cpu_sa_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "SA handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -303,11 +321,7 @@ async fn quip_cpu_gibbs_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "Gibbs handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -336,11 +350,7 @@ async fn quip_cpu_sb_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "SB handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -403,11 +413,7 @@ async fn quip_cpu_bsb_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "bsb handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -520,11 +526,7 @@ async fn quip_cpu_hdsb_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "HDSB handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -586,11 +588,7 @@ async fn quip_cpu_hbsb_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "HBSB handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -651,11 +649,7 @@ async fn quip_cpu_mps_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "mps handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -689,11 +683,7 @@ async fn quip_cpu_flatiron_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "flatiron handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
@@ -726,11 +716,7 @@ async fn quip_cpu_mfa_passes_conformance() {
     );
     let report = drive_miner_bounded(&miner, &format!("unix://{socket}")).await;
     assert!(report.handshake_ok, "mfa handshake failed");
-    assert_eq!(
-        report.result_job_ids().len(),
-        5,
-        "expected 5 job results (job-1, job-2, job-hash, job-sparse, job-seeded)"
-    );
+    assert_only_permitted_results(&report);
     assert!(
         report.result_job_ids().iter().any(|id| id == b"job-seeded"),
         "missing result for seeded job-seeded: {:?}",
