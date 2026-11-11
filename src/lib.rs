@@ -35,6 +35,10 @@ mod spin_barrier;
 pub use families::dimer_weighted_sampler::{
     DimerSampler, CPU_DIMER_IDENTITY, DIMER_METHOD, DIMER_SOLVER_ID,
 };
+pub use families::dipolar_sampler::{DipolarSampler, CPU_DIPOLAR_IDENTITY, DIPOLAR_SOLVER_ID};
+pub use families::flow_loops_sampler::{
+    FlowLoopsSampler, CPU_FLOW_LOOPS_IDENTITY, FLOW_LOOPS_SOLVER_ID,
+};
 pub use families::flow_sampler::{FlowSampler, CPU_FLOW_IDENTITY, FLOW_SOLVER_ID};
 pub use families::ice_sat_sampler::{IceSatSampler, CPU_ICE_SAT_IDENTITY, ICE_SAT_SOLVER_ID};
 pub use families::otsuka_sampler::{OtsukaSampler, CPU_OTSUKA_IDENTITY, OTSUKA_SOLVER_ID};
@@ -700,8 +704,8 @@ mod tests {
 
     /// Every identity states its limits, and lists `linear-schedule` exactly
     /// when its kernel anneals a beta ladder. The Simulated Bifurcation
-    /// kernels, the greedy descent, and the exact flow baselines have no
-    /// ladder. The three lists together cover every binary.
+    /// kernels, the greedy descent, the exact flow baselines, and the flow
+    /// loop search have no ladder. The three lists together cover every binary.
     #[test]
     fn every_identity_states_its_schedule_feature_and_limits() {
         let ladder = [
@@ -734,6 +738,8 @@ mod tests {
             CPU_TILE_WORM_IDENTITY,
             CPU_GADGET_REPAIR_IDENTITY,
             CPU_ROUTING_IDENTITY,
+            CPU_FLOW_LOOPS_IDENTITY,
+            CPU_DIPOLAR_IDENTITY,
         ];
         let linear = quip_solver_core::LINEAR_SCHEDULE_FEATURE;
         for id in &ladder {
