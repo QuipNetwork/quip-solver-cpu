@@ -160,7 +160,7 @@ fn the_energy_splits_exactly_for_every_state_and_soft_weight() {
 }
 
 #[test]
-fn a_cluster_sweep_reports_the_exact_weak_change() {
+fn a_cluster_sweep_reports_the_exact_energy_change() {
     let fixture = corner_sharing();
     let mut rng = SmallRng::seed_from_u64(11);
     for weights in SOFT_WEIGHTS {
@@ -168,12 +168,12 @@ fn a_cluster_sweep_reports_the_exact_weak_change() {
         for beta in [0.05, 0.7, 4.0] {
             for start in states(fixture.num_nodes()) {
                 let mut chain = Chain::new(&graph, start.clone()).unwrap();
-                let before = graph.weak_energy(&start);
+                let before = graph.energy(&start);
                 let change = chain.cluster_sweep(beta, &mut rng);
                 let s = chain.spins();
                 assert!(s.iter().all(|&x| x == 1 || x == -1));
                 assert_eq!(
-                    graph.weak_energy(s) - before,
+                    graph.energy(s) - before,
                     change,
                     "{weights:?} beta {beta} from {start:?}"
                 );

@@ -161,7 +161,11 @@ fixtures.
 is `quip-cpu-otsuka/1`, and it generates and accepts `quip/twisted-ice-dimer`
 revision 1. The session validates each family instance before the sampler sees
 it. The kernel then reads the tiles, gauges, and pairs from the instance and
-anneals with the job's beta ladder, one cluster sweep per sweep. Every other
+anneals with the job's beta ladder. Each sweep is one cluster sweep and one
+Metropolis sweep. The cluster draw takes 250 of the 1,000 milli of each pair
+coupling, and the heat bath scores the rest, as in the research solver. A job
+without a beta range anneals from beta 0.5 to 12 per full coupler, the range
+the research schedule study selected. Every other
 job, and every family job that does not fit the kernel, runs on the SA kernel.
 `tests/family_conformance.rs` runs the family gate and the plain-job
 conformance against the binary.
