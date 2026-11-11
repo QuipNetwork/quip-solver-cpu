@@ -749,6 +749,32 @@ cargo test --release
 Conformance/golden and handshake tests drive the binary in isolation via
 `quip-solver-conformance` and check energies against `conformance/golden_vectors.json`.
 
+## Continuous integration
+
+The Linux jobs run on a toolchain image that
+`.gitlab/ci-toolchain.Dockerfile` defines. The image holds Rust 1.97.1 with
+clippy and rustfmt, the aarch64 target and cross linker, and a Python virtual
+environment with maturin, numpy, and pytest. The jobs install nothing.
+
+The jobs pull the image by digest, from `TOOLCHAIN_IMAGE` in `.gitlab-ci.yml`.
+To change the image:
+
+1. Edit the Dockerfile and push the branch. A branch push that changes the
+   Dockerfile runs the `build-toolchain-image` job. On other pipelines the job
+   is manual.
+2. Copy the `TOOLCHAIN_IMAGE=...` line that the job prints into
+   `.gitlab-ci.yml`, and commit it.
+
+Run the job by hand to pick up a new base image or Python package without a
+Dockerfile change. The build context is empty, so a `Cargo.lock` change never
+needs a rebuild.
+
+The cargo cache key is the job name and a hash of the lockfile. The runners
+store caches locally, in one volume for each concurrent job slot, so a job
+finds its cache only when it runs in the slot that saved it. A shared cache
+removes that limit: configure `[runners.cache]` with an S3-compatible store
+on each runner, or mount one host directory as `/cache` for every slot.
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
