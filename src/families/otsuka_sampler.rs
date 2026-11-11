@@ -47,6 +47,23 @@ const TWISTED_DIMER: &[FamilyClaim] = &[FamilyClaim {
     only_params: &[],
 }];
 
+/// The anneal ends, per full coupler, for a family job that names no beta
+/// range. A schedule study on the `x-w62-p1200` cell (seven ranges, eight
+/// seeds, two models, 65,536-sweep anneals) found no range better than 0.5
+/// to 12. The default SA range of these models, about 0.044 to 105, spends
+/// three fifths of a geometric ladder outside that band.
+const FAMILY_BETA_RANGE: (f64, f64) = (0.5, 12.0);
+
+/// The bond weights of the research solver: the cluster draw takes a
+/// quarter of each pair coupling, and the heat bath scores the rest.
+const FAMILY_WEIGHTS: Weights = Weights {
+    pair_milli: 250,
+    tile_milli: 1000,
+};
+
+/// A Metropolis sweep after every cluster sweep, as in the research solver.
+const SINGLE_EVERY: usize = 1;
+
 /// The metadata section that holds the pairs.
 pub(crate) const PAIRS_SECTION: u16 = 3;
 
@@ -133,7 +150,7 @@ fn prepare(graph: &IsingGraph, instance: &Instance) -> Option<OtsukaGraph> {
         gauges: &gauges,
         pairs: &pairs,
     };
-    match OtsukaGraph::new(&model, &motifs, Weights::FULL) {
+    match OtsukaGraph::new(&model, &motifs, FAMILY_WEIGHTS) {
         Ok(prepared) => Some(prepared),
         Err(error) => {
             tracing::warn!(%error, "a validated twisted-ice-dimer instance does not fit the kernel");
@@ -143,10 +160,14 @@ fn prepare(graph: &IsingGraph, instance: &Instance) -> Option<OtsukaGraph> {
 }
 
 /// The per-sweep betas of `params`: each rung of the SA ladder repeated for
-/// its sweeps.
+/// its sweeps. A job without a beta range takes [`FAMILY_BETA_RANGE`].
 fn sweep_betas(graph: &IsingGraph, params: &SampleParams) -> Vec<f64> {
     let per_beta = effective_sweeps_per_beta(params.num_sweeps, params.sweeps_per_beta);
-    build_beta_schedule(graph, params)
+    let params = SampleParams {
+        beta_range: Some(params.beta_range.unwrap_or(FAMILY_BETA_RANGE)),
+        ..params.clone()
+    };
+    build_beta_schedule(graph, &params)
         .into_iter()
         .flat_map(|beta| std::iter::repeat_n(beta, per_beta))
         .collect()
@@ -162,7 +183,7 @@ fn otsuka_reads(
 ) -> Option<Result<Vec<SamplerResult>, AnnealError>> {
     let prepared = otsuka_graph(graph, family)?;
     let betas = sweep_betas(graph, params);
-    let schedule = match Schedule::new(&betas, 0) {
+    let schedule = match Schedule::new(&betas, SINGLE_EVERY) {
         Ok(schedule) => schedule,
         Err(error) => {
             tracing::warn!(%error, "the job schedule does not fit the Otsuka kernel");

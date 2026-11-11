@@ -61,6 +61,8 @@ impl Weights {
 pub enum GraphError {
     /// The model has no nodes.
     Empty,
+    /// The model has more than [`MAX_NODES`] nodes.
+    TooLarge,
     /// A weight is outside its range.
     Weights,
     /// A field is not zero.
@@ -114,6 +116,7 @@ impl fmt::Display for GraphError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty => write!(f, "the model has no nodes"),
+            Self::TooLarge => write!(f, "the kernel takes at most {MAX_NODES} nodes"),
             Self::Weights => write!(
                 f,
                 "the pair weight must be in 0..=1000 and the tile weight in 1..=1000 milli"
@@ -138,48 +141,73 @@ impl std::error::Error for GraphError {}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Tile {
-    pub(crate) nodes: [usize; 4],
+    pub(crate) nodes: [u32; 4],
     pub(crate) gauge: [i8; 4],
 }
 
-/// Adjacency in compressed rows: the neighbours of `u` are
-/// `to[start[u]..start[u + 1]]` with couplings `w[..]`.
+/// The most nodes a graph may have: a [`Link`] holds the node in 21 bits.
+pub const MAX_NODES: usize = 1 << 21;
+
+/// A neighbour and its coupling in one word: the node in the high 21 bits
+/// and the coupling plus 1024 in the low 11. Every coupling the kernel keeps
+/// is within 1000 milli. The small word keeps a model's rows in the core's
+/// cache.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Link(u32);
+
+impl Link {
+    const SHIFT: u32 = 11;
+
+    fn new(node: u32, j: i32) -> Self {
+        debug_assert!((node as usize) < MAX_NODES && j.abs() <= STRONG_MILLI);
+        Self(node << Self::SHIFT | (j + 1024) as u32)
+    }
+
+    /// The neighbour.
+    #[inline]
+    pub(crate) fn node(self) -> usize {
+        (self.0 >> Self::SHIFT) as usize
+    }
+
+    /// The coupling, in milli.
+    #[inline]
+    pub(crate) fn j(self) -> i32 {
+        (self.0 & ((1 << Self::SHIFT) - 1)) as i32 - 1024
+    }
+}
+
+/// Adjacency in compressed rows: the neighbours of `u` and their couplings
+/// are `adj[start[u]..start[u + 1]]`.
 #[derive(Debug)]
 pub(crate) struct Csr {
-    pub(crate) start: Vec<usize>,
-    pub(crate) to: Vec<usize>,
-    pub(crate) w: Vec<i32>,
+    start: Vec<usize>,
+    adj: Vec<Link>,
 }
 
 impl Csr {
     fn build(n: usize, edges: &[Edge]) -> Self {
         let mut start = vec![0; n + 1];
         for &(u, v, _) in edges {
-            start[u + 1] += 1;
-            start[v + 1] += 1;
+            start[u as usize + 1] += 1;
+            start[v as usize + 1] += 1;
         }
         for u in 0..n {
             start[u + 1] += start[u];
         }
         let mut fill = start.clone();
-        let mut to = vec![0; 2 * edges.len()];
-        let mut w = vec![0; 2 * edges.len()];
+        let mut adj = vec![Link(0); 2 * edges.len()];
         for &(u, v, j) in edges {
             for (from, end) in [(u, v), (v, u)] {
-                to[fill[from]] = end;
-                w[fill[from]] = j;
-                fill[from] += 1;
+                adj[fill[from as usize]] = Link::new(end, j);
+                fill[from as usize] += 1;
             }
         }
-        Self { start, to, w }
+        Self { start, adj }
     }
 
-    pub(crate) fn row(&self, u: usize) -> impl Iterator<Item = (usize, i32)> + '_ {
-        let range = self.start[u]..self.start[u + 1];
-        self.to[range.clone()]
-            .iter()
-            .copied()
-            .zip(self.w[range].iter().copied())
+    /// The neighbours of `u` and their couplings.
+    pub(crate) fn row(&self, u: usize) -> &[Link] {
+        &self.adj[self.start[u]..self.start[u + 1]]
     }
 }
 
@@ -188,19 +216,21 @@ impl Csr {
 pub struct OtsukaGraph {
     pub(crate) n: usize,
     pub(crate) tiles: Vec<Tile>,
-    pub(crate) pairs: Vec<(usize, usize)>,
+    pub(crate) pairs: Vec<(u32, u32)>,
     pub(crate) weights: Weights,
     /// Every coupling of the model.
     edges: Vec<Edge>,
-    /// The weak layer: non-motif edges plus the residuals of soft weights.
-    pub(crate) weak_edges: Vec<Edge>,
+    /// The weak layer: non-motif edges plus the residuals of soft weights,
+    /// each as one end and the [`Link`] to the other.
+    pub(crate) weak_edges: Vec<(u32, Link)>,
     pub(crate) weak: Csr,
     /// Every coupling, for single-spin moves.
     pub(crate) all: Csr,
 }
 
-/// An edge and its coupling in milli.
-pub(crate) type Edge = (usize, usize, i32);
+/// An edge and its coupling in milli. Node positions fit `u32`, because the
+/// model names them with `u32` ids.
+pub(crate) type Edge = (u32, u32, i32);
 
 /// The edge position of each unordered node pair.
 type EdgeIndex = HashMap<(usize, usize), usize>;
@@ -226,7 +256,7 @@ fn check_edges(model: &Model<'_>, n: usize) -> Result<(Vec<Edge>, EdgeIndex), Gr
         if index.insert(key(u, v), at).is_some() {
             return Err(GraphError::DuplicateEdge { index: at });
         }
-        edges.push((u, v, j));
+        edges.push((u as u32, v as u32, j));
     }
     Ok((edges, index))
 }
@@ -265,7 +295,10 @@ fn check_tiles(
                 }
             }
         }
-        tiles.push(Tile { nodes, gauge });
+        tiles.push(Tile {
+            nodes: nodes.map(|u| u as u32),
+            gauge,
+        });
     }
     Ok(tiles)
 }
@@ -277,7 +310,7 @@ fn check_pairs(
     edges: &[Edge],
     index: &EdgeIndex,
     strong: &mut [bool],
-) -> Result<Vec<(usize, usize)>, GraphError> {
+) -> Result<Vec<(u32, u32)>, GraphError> {
     let mut taken = vec![false; n];
     let mut pairs = Vec::with_capacity(motifs.pairs.len());
     for (pair, &(u, v)) in motifs.pairs.iter().enumerate() {
@@ -294,7 +327,7 @@ fn check_pairs(
         }
         taken[u] = true;
         taken[v] = true;
-        pairs.push((u, v));
+        pairs.push((u as u32, v as u32));
     }
     Ok(pairs)
 }
@@ -314,6 +347,9 @@ impl OtsukaGraph {
         let n = model.h_milli.len();
         if n == 0 {
             return Err(GraphError::Empty);
+        }
+        if n > MAX_NODES {
+            return Err(GraphError::TooLarge);
         }
         if !weights.is_valid() {
             return Err(GraphError::Weights);
@@ -360,7 +396,10 @@ impl OtsukaGraph {
             weights,
             weak: Csr::build(n, &weak_edges),
             all: Csr::build(n, &edges),
-            weak_edges,
+            weak_edges: weak_edges
+                .iter()
+                .map(|&(u, v, j)| (u, Link::new(v, j)))
+                .collect(),
             edges,
         })
     }
@@ -376,7 +415,7 @@ impl OtsukaGraph {
     pub fn energy(&self, s: &[i8]) -> i64 {
         self.edges
             .iter()
-            .map(|&(u, v, j)| i64::from(j) * i64::from(s[u] * s[v]))
+            .map(|&(u, v, j)| i64::from(j) * i64::from(s[u as usize] * s[v as usize]))
             .sum()
     }
 
@@ -389,7 +428,7 @@ impl OtsukaGraph {
             .iter()
             .map(|tile| {
                 let q: i64 = (0..4)
-                    .map(|k| i64::from(tile.gauge[k] * s[tile.nodes[k]]))
+                    .map(|k| i64::from(tile.gauge[k] * s[tile.nodes[k] as usize]))
                     .sum();
                 tile_milli * (q * q - 4) / 2
             })
@@ -397,7 +436,9 @@ impl OtsukaGraph {
         let pairs: i64 = self
             .pairs
             .iter()
-            .map(|&(u, v)| i64::from(self.weights.pair_milli) * i64::from(s[u] * s[v]))
+            .map(|&(u, v)| {
+                i64::from(self.weights.pair_milli) * i64::from(s[u as usize] * s[v as usize])
+            })
             .sum();
         tiles - pairs
     }
