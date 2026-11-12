@@ -16,8 +16,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 quip-solver-cpu = { path = ".." }
-quip-protocol = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
-quip-solver-core = { git = "https://gitlab.com/quip.network/quip-solver-core.git", rev = "38f485386dc44f379641a62b98278726050f484c" }
+quip-protocol = "0.0.11"
+quip-solver-core = "0.0.11"
 pyo3 = { version = "0.29", features = ["abi3-py311", "extension-module"] }
 numpy = "0.29"
 
