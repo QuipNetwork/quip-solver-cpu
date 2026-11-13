@@ -5,8 +5,8 @@
 //! `quip/polariton-static` revision 1. It runs a charge-preserving loop
 //! search from the supplied initial states, or from the exact baseline
 //! orientation when a job has none, and returns one state per start in start
-//! order. It declines every other job, because a plain model has no link
-//! structure.
+//! order. Every other job is annealed by the generic sampler, because a plain
+//! model has no link structure.
 
 use clap::Parser;
 use quip_solver_core::{run, CommonArgs};
