@@ -1,9 +1,11 @@
 //! Family capabilities of the existing CPU binaries.
 //!
 //! None of these binaries links a canonical family generator, so each one
-//! declares the generic tier: no `solver_id` and no generated or accepted
-//! family. The command line, the session `Hello`, and `GetCapabilities` must
-//! say the same thing, and the family gate must grade the binary conformant.
+//! declares the generic tier: no `solver_id` and no accepted family. The
+//! solver-core default session path generates every registered family, so each
+//! binary lists all of them as generated, in registry order. The command line,
+//! the session `Hello`, and `GetCapabilities` must say the same thing, and the
+//! family gate must grade the binary conformant.
 #![cfg(feature = "experimental")]
 
 use quip_proto::v1::{
@@ -11,6 +13,7 @@ use quip_proto::v1::{
 };
 use quip_solver_conformance::driver::drive_miner;
 use quip_solver_conformance::families::drive_miner_family;
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use serde_json::{json, Map, Value};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -130,8 +133,14 @@ fn session_json(c: &Capabilities) -> Value {
     }
     assert!(c.native_topology_hash.is_none(), "{c:?}");
     assert!(c.solver_id.is_empty(), "{c:?}");
-    assert!(c.generated_families.is_empty(), "{c:?}");
     assert!(c.accepted_families.is_empty(), "{c:?}");
+    view.insert(
+        "generatedFamilies".into(),
+        c.generated_families
+            .iter()
+            .map(|f| json!({"familyId": f.family_id, "revisions": f.revisions}))
+            .collect(),
+    );
     Value::Object(view)
 }
 
@@ -151,9 +160,17 @@ fn the_command_line_declares_the_generic_tier_with_limits() {
     for bin in bins() {
         let name = bin.name;
         let caps = command_line_capabilities(bin.path);
-        for key in ["solverId", "generatedFamilies", "acceptedFamilies"] {
+        for key in ["solverId", "acceptedFamilies"] {
             assert!(caps.get(key).is_none(), "{name} lists {key}: {caps}");
         }
+        let generated: Vec<&str> = caps["generatedFamilies"]
+            .as_array()
+            .expect("a generated family list")
+            .iter()
+            .map(|f| f["familyId"].as_str().unwrap())
+            .collect();
+        let registry: Vec<&str> = CONTRACTS.iter().map(|c| c.family_id).collect();
+        assert_eq!(generated, registry, "{name}: {caps}");
         assert_eq!(caps["backend"], "cpu", "{name}: {caps}");
         assert_eq!(
             caps["algorithm"],

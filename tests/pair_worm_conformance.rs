@@ -9,6 +9,7 @@
 use quip_proto::v1::{Algorithm, Backend, RejectReason};
 use quip_solver_conformance::driver::{drive_miner, INITIAL_SPINS_FEATURE};
 use quip_solver_conformance::solve::drive_solve;
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use std::process::Command;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -18,6 +19,13 @@ static GATE: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 const BIN: &str = env!("CARGO_BIN_EXE_quip-cpu-pairworm");
 const SOLVER_ID: &str = "quip-cpu-pairworm/1";
+
+/// Every registered family id, in registry order. The binary declares no
+/// generated family, so the solver-core default session path generates all of
+/// them.
+fn registry_ids() -> Vec<&'static str> {
+    CONTRACTS.iter().map(|c| c.family_id).collect()
+}
 
 fn socket(name: &str) -> String {
     let nanos = std::time::SystemTime::now()
@@ -38,7 +46,14 @@ fn the_command_line_declares_the_pair_worm_identity() {
     assert_eq!(caps["backend"], "cpu", "{caps}");
     assert_eq!(caps["algorithm"], "pair-worm", "{caps}");
     assert_eq!(caps["solverId"], SOLVER_ID, "{caps}");
-    assert!(caps.get("generatedFamilies").is_none(), "{caps}");
+    let generated = caps["generatedFamilies"]
+        .as_array()
+        .expect("a generated family list");
+    let ids: Vec<&str> = generated
+        .iter()
+        .map(|e| e["familyId"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, registry_ids(), "{caps}");
     let accepted = caps["acceptedFamilies"].as_array().expect("a family list");
     assert_eq!(accepted.len(), 1, "{caps}");
     assert_eq!(accepted[0]["familyId"], "quip/twisted-ice-dimer", "{caps}");

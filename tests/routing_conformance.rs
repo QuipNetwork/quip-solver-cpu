@@ -1,14 +1,15 @@
 //! `quip-cpu-routing`: the routing attack behind the solver session.
 //!
-//! The binary accepts `quip/two-commodity-routing` revision 1 and generates no
-//! family work. It has no fallback kernel, so a job outside the family is
-//! declined, and the plain-job session conformance does not apply.
+//! The binary accepts `quip/two-commodity-routing` revision 1 and declares no
+//! generated family. A job outside the family is solved by the generic
+//! annealer, and the plain-job session conformance does not apply.
 #![cfg(feature = "experimental")]
 
 use quip_proto::v1::{Algorithm, Backend};
 use quip_solver_conformance::driver::drive_miner;
 use quip_solver_conformance::families::drive_miner_family;
 use quip_solver_conformance::solve::CaseOutcome;
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use std::process::Command;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -19,6 +20,13 @@ static GATE: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 const BIN: &str = env!("CARGO_BIN_EXE_quip-cpu-routing");
 const SOLVER_ID: &str = "quip-cpu-routing/1";
 const FAMILY: &str = "quip/two-commodity-routing";
+
+/// Every registered family id, in registry order. The binary declares no
+/// generated family, so the solver-core default session path generates all of
+/// them.
+fn registry_ids() -> Vec<&'static str> {
+    CONTRACTS.iter().map(|c| c.family_id).collect()
+}
 
 fn socket(name: &str) -> String {
     let nanos = std::time::SystemTime::now()
@@ -39,7 +47,14 @@ fn the_command_line_declares_routing_revision_one_as_accepted() {
     assert_eq!(caps["backend"], "cpu", "{caps}");
     assert_eq!(caps["algorithm"], "routing", "{caps}");
     assert_eq!(caps["solverId"], SOLVER_ID, "{caps}");
-    assert!(caps.get("generatedFamilies").is_none(), "{caps}");
+    let generated = caps["generatedFamilies"]
+        .as_array()
+        .expect("a generated family list");
+    let ids: Vec<&str> = generated
+        .iter()
+        .map(|e| e["familyId"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, registry_ids(), "{caps}");
     let accepted = caps["acceptedFamilies"].as_array().expect("a family list");
     assert_eq!(accepted.len(), 1, "{caps}");
     assert_eq!(accepted[0]["familyId"], FAMILY, "{caps}");
@@ -59,7 +74,12 @@ async fn the_session_advertises_what_the_command_line_prints() {
     assert_eq!(session.backend(), Backend::Cpu);
     assert_eq!(session.algorithm(), Algorithm::Routing);
     assert_eq!(session.solver_id, SOLVER_ID);
-    assert!(session.generated_families.is_empty());
+    let generated: Vec<&str> = session
+        .generated_families
+        .iter()
+        .map(|f| f.family_id.as_str())
+        .collect();
+    assert_eq!(generated, registry_ids());
     assert_eq!(session.accepted_families.len(), 1);
     assert_eq!(session.accepted_families[0].family_id, FAMILY);
     assert_eq!(session.accepted_families[0].revisions, vec![1]);
