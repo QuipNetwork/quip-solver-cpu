@@ -349,7 +349,7 @@ impl Sampler for FlowLoopsSampler {
                 Err(_) => crate::reject_num_cpus(crate::NumCpusError::InvalidToml),
             }
         };
-        quip_solver_core::config::warn_unknown_fields("cpu", config.unknown.keys());
+        crate::warn_cpu_unknown_fields(config.unknown.keys());
         match crate::check_num_cpus(config.num_cpus) {
             Ok(Some(requested)) => crate::store_num_cpus(&self.num_cpus, requested),
             Ok(None) => {}

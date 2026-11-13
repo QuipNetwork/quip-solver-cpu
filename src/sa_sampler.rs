@@ -531,7 +531,7 @@ pub(crate) fn read_rng(base: u64, read_idx: usize) -> SmallRng {
     )
 }
 
-fn score(spins: &[i8], graph: &IsingGraph) -> SamplerResult {
+pub(crate) fn score(spins: &[i8], graph: &IsingGraph) -> SamplerResult {
     SamplerResult {
         spins: spins.to_vec(),
         energy_milli: energy_milli(spins, &graph.h, &graph.j, &graph.edges),
