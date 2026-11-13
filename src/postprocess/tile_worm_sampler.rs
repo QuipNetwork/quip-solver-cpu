@@ -476,7 +476,15 @@ mod tests {
         let table: FamilyTable = TileWormSampler::declaration()
             .validate()
             .expect("a valid declaration");
-        assert!(table.generated().is_empty());
+        // Declares no generated revision; registered families are generated
+        // only on the solver-core default session path.
+        assert_eq!(
+            quip_solver_core::ising_generators::registry::CONTRACTS
+                .iter()
+                .filter(|c| table.declares_generated(c.family_id, c.revision))
+                .count(),
+            0
+        );
         assert_eq!(table.accepted().len(), 2);
         let (id, rev) = (CHARGED_ICE_V1.family_id, CHARGED_ICE_V1.revision);
         assert_eq!(

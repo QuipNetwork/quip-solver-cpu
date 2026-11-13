@@ -14,9 +14,9 @@
 //! graph, and the job log keeps the declared budget apart from the measured
 //! time.
 //!
-//! The binary declines every other job with `NO_SOLUTION`, as
-//! `quip-cpu-flow` does: a plain model, and every family it does not list,
-//! reach the sampler with no link structure.
+//! Every other job is solved by the generic simulated-annealing sampler that
+//! `quip-cpu-sa` uses, as in `quip-cpu-flow`: a plain model, and every family
+//! it does not list, reach the sampler with no link structure.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -36,6 +36,7 @@ use super::flow::{orient, FlowError, LinkTask, Mode, Outcome};
 use super::flow_loops::{
     search, LoopError, LoopKernel, LoopReport, Work, FLOW_LOOPS_DEFAULT_BUDGET_SECONDS,
 };
+use crate::sampler_core::sample_generic_sa;
 use crate::{check_sample_size, run_job_pump, StreamKernelError};
 
 /// The stable id of this binary (FAM-60).
@@ -65,10 +66,6 @@ const FAMILIES: &[FamilyClaim] = &[
         only_params: &[],
     },
 ];
-
-/// The detail of a declined job without a supported family.
-const NOT_A_FLOW_JOB: &str = "quip-cpu-flow-loops solves only validated quip/flow-static@1 and \
-     quip/polariton-static@1 jobs; other families and plain models have no link structure";
 
 /// The largest budget `budget_s` may set, in seconds.
 const MAX_BUDGET_SECONDS: f64 = 60.0;
@@ -189,7 +186,8 @@ fn job_starts(
     }
 }
 
-/// The search on one job, or why it has none.
+/// The search on one flow job, or why it has none. Any other job is annealed
+/// by the generic sampler.
 fn job_reads(
     graph: &IsingGraph,
     params: &SampleParams,
@@ -199,9 +197,9 @@ fn job_reads(
     budget: Duration,
 ) -> Result<Vec<SamplerResult>, Failure> {
     let started = Instant::now();
-    let family = family
-        .filter(|f| Mode::of(f.contract()).is_some())
-        .ok_or_else(|| Failure::declined(NOT_A_FLOW_JOB))?;
+    let Some(family) = family.filter(|f| Mode::of(f.contract()).is_some()) else {
+        return sample_generic_sa(graph, params, cancel).map_err(|_| Failure::Cancelled);
+    };
     if family.instance().node_ids().len() != graph.h.len() {
         return Err(Failure::declined("the instance does not fit the job graph"));
     }
@@ -276,29 +274,30 @@ fn into_result(
 }
 
 impl Sampler for FlowLoopsSampler {
-    /// A plain model has no link structure, so it is declined.
+    /// A plain model has no link structure, so it is annealed.
     fn sample(
         &self,
         graph: &IsingGraph,
-        _params: &SampleParams,
+        params: &SampleParams,
     ) -> Result<Vec<SamplerResult>, SampleError> {
         check_sample_size(graph.h.len(), graph.edges.len())?;
-        into_result(Err(Failure::declined(NOT_A_FLOW_JOB)))
+        into_result(job_reads(graph, params, None, None, None, self.budget()))
     }
 
     fn accepts_warm_start() -> bool {
         true
     }
 
-    /// A warm plain model has no link structure either.
+    /// A warm plain model has no link structure either, so it is annealed
+    /// without its start states.
     fn sample_warm(
         &self,
         graph: &IsingGraph,
-        _params: &SampleParams,
+        params: &SampleParams,
         _warm: &WarmStart,
     ) -> Result<Vec<SamplerResult>, SampleError> {
         check_sample_size(graph.h.len(), graph.edges.len())?;
-        into_result(Err(Failure::declined(NOT_A_FLOW_JOB)))
+        into_result(job_reads(graph, params, None, None, None, self.budget()))
     }
 
     fn accepts_family_metadata() -> bool {
@@ -425,7 +424,7 @@ mod tests {
     use quip_solver_core::ising_generators::flow::FLOW_V1;
     use quip_solver_core::ising_generators::polariton::POLARITON_V1;
     use quip_solver_core::ising_generators::routing::ROUTING_V1;
-    use quip_solver_core::{IsingGraph, SampleError, SampleParams, Sampler};
+    use quip_solver_core::{IsingGraph, SampleParams, Sampler};
     use std::time::Duration;
 
     #[test]
@@ -470,9 +469,7 @@ mod tests {
             .expect("a valid declaration");
         assert_eq!(FAMILIES.len(), 2);
         for contract in [FLOW_V1, POLARITON_V1] {
-            assert!(table
-                .generated_contract(contract.family_id, contract.revision)
-                .is_some());
+            assert!(table.declares_generated(contract.family_id, contract.revision));
             assert!(table
                 .accepted_contract(contract.family_id, contract.revision)
                 .is_some());
@@ -481,22 +478,28 @@ mod tests {
             assert!(table
                 .accepted_contract(contract.family_id, contract.revision)
                 .is_none());
-            assert!(table
-                .generated_contract(contract.family_id, contract.revision)
-                .is_none());
+            // Generated on the solver-core default session path, but not
+            // declared, so its leases never reach this sampler's own path.
+            assert!(!table.declares_generated(contract.family_id, contract.revision));
         }
     }
 
     #[test]
-    fn a_plain_job_is_declined() {
+    fn a_plain_job_is_annealed() {
         let graph = IsingGraph::new(
             vec![0.0; 4],
             vec![-1.0; 4],
             vec![(0, 1), (1, 2), (2, 3), (0, 3)],
         );
-        let got = FlowLoopsSampler::new().sample(&graph, &SampleParams::default());
-        assert!(
-            matches!(got, Err(SampleError::Declined(detail)) if detail.contains("quip-cpu-flow-loops"))
-        );
+        let params = SampleParams {
+            num_reads: 3,
+            num_sweeps: 32,
+            seed: 1,
+            ..Default::default()
+        };
+        let got = FlowLoopsSampler::new()
+            .sample(&graph, &params)
+            .expect("a plain job is solved by the generic sampler");
+        assert_eq!(got.len(), 3);
     }
 }

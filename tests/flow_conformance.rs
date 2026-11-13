@@ -3,14 +3,15 @@
 //! The binary generates and accepts `quip/flow-static` revision 1 and
 //! `quip/polariton-static` revision 1. The family gate grades leases and
 //! explicit jobs of both on the reference topology. Every plain job, which is
-//! how the session serves a family the binary does not list, is declined with
-//! `NO_SOLUTION`.
+//! how the session serves a family the binary does not list, is solved by the
+//! generic annealer.
 #![cfg(feature = "experimental")]
 
 use quip_proto::v1::{Algorithm, Backend, RejectReason};
 use quip_solver_conformance::driver::drive_miner;
 use quip_solver_conformance::families::drive_miner_family;
 use quip_solver_conformance::solve::CaseOutcome;
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use std::process::Command;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -21,6 +22,22 @@ static GATE: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 const BIN: &str = env!("CARGO_BIN_EXE_quip-cpu-flow");
 const SOLVER_ID: &str = "quip-cpu-flow/1";
 const FAMILIES: [&str; 2] = ["quip/flow-static", "quip/polariton-static"];
+
+/// The family ids a capability list must hold, in order. The binary accepts
+/// only its declared families. It generates them first, then every other
+/// registered family through the solver-core default session path.
+fn expected_family_ids(list: &str) -> Vec<&'static str> {
+    let mut ids = FAMILIES.to_vec();
+    if list == "generatedFamilies" {
+        ids.extend(
+            CONTRACTS
+                .iter()
+                .map(|c| c.family_id)
+                .filter(|id| !FAMILIES.contains(id)),
+        );
+    }
+    ids
+}
 
 fn socket(name: &str) -> String {
     let nanos = std::time::SystemTime::now()
@@ -47,7 +64,7 @@ fn the_command_line_declares_both_baseline_families() {
             .iter()
             .map(|e| e["familyId"].as_str().unwrap())
             .collect();
-        assert_eq!(ids, FAMILIES, "{list}: {caps}");
+        assert_eq!(ids, expected_family_ids(list), "{list}: {caps}");
         for entry in entries {
             assert_eq!(entry["revisions"], serde_json::json!([1]), "{list}: {caps}");
             assert!(entry.get("paramsDigests").is_none(), "{list}: {caps}");
@@ -84,7 +101,7 @@ async fn the_family_gate_grades_the_binary_conformant() {
 }
 
 #[tokio::test]
-async fn plain_jobs_are_declined_and_the_session_survives() {
+async fn plain_jobs_are_solved_and_the_session_survives() {
     let _guard = GATE.lock().await;
     let report = drive_miner(BIN, &socket("plain")).await;
     assert!(report.handshake_ok, "handshake failed");
@@ -97,9 +114,10 @@ async fn plain_jobs_are_declined_and_the_session_survives() {
     assert_eq!(session.solver_id, SOLVER_ID);
     for id in [&b"job-1"[..], b"job-2", b"job-sparse", b"job-seeded"] {
         assert!(
-            report.has_reject(id, RejectReason::NoSolution),
-            "{} is not declined",
-            String::from_utf8_lossy(id)
+            report.result_job_ids().iter().any(|got| got == id),
+            "no result for {}: {:?}",
+            String::from_utf8_lossy(id),
+            report.result_job_ids()
         );
     }
     assert!(report.has_reject(b"job-bad-h", RejectReason::Malformed));

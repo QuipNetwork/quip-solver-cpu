@@ -11,10 +11,11 @@
 //! The sampler claims no global optimum. A start order that fails is logged and
 //! left out. A job with no final state is declined.
 //!
-//! Admission is strict. A job that is not a routing revision 1 job is
-//! declined, whether it carries no family metadata, another family, another
-//! revision, or a routing section that does not decode. There is no fallback
-//! kernel.
+//! Admission is strict for a routing revision 1 job: one whose instance does
+//! not match the job graph, or whose routing section does not decode, is
+//! declined. A job that is not a routing revision 1 job, whether it carries no
+//! family metadata, another family, or another revision, is solved by the
+//! generic simulated-annealing sampler that `quip-cpu-sa` uses.
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ use quip_solver_core::{
 
 use super::routing::{Candidate, Guard, Routing, RoutingError, POLICY};
 use crate::sa_sampler::coefficient_milli;
+use crate::sampler_core::sample_generic_sa;
 use crate::{check_sample_size, run_job_pump, StreamKernelError};
 
 /// The stable id of this binary (FAM-60).
@@ -79,19 +81,9 @@ fn declined(detail: impl Into<String>) -> Failure {
     Failure::Rejected(SampleError::Declined(detail.into()))
 }
 
-/// The routing model of a job, or why the job is not admitted.
-fn admit(graph: &IsingGraph, family: Option<&FamilyContext>) -> Result<Routing, Failure> {
-    let family = family
-        .ok_or_else(|| declined("not a quip/two-commodity-routing job: no family metadata"))?;
-    if family.family_id() != ROUTING_V1.family_id || family.revision() != ROUTING_V1.revision {
-        return Err(declined(format!(
-            "not a quip/two-commodity-routing revision {} job: {} revision {}",
-            ROUTING_V1.revision,
-            family.family_id(),
-            family.revision()
-        )));
-    }
-    admit_instance(graph, family.instance())
+/// The family of a routing revision 1 job, if the job is one.
+fn routing_family(family: Option<&FamilyContext>) -> Option<&FamilyContext> {
+    family.filter(|f| f.family_id() == ROUTING_V1.family_id && f.revision() == ROUTING_V1.revision)
 }
 
 /// The routing model of an instance of revision 1 that is the job graph.
@@ -206,13 +198,19 @@ fn score(graph: &IsingGraph, candidate: Candidate) -> Result<(Candidate, i64), R
     Ok((candidate, energy))
 }
 
+/// The routing attack on a routing job. Any other job is annealed by the
+/// generic sampler.
 fn job_reads(
     graph: &IsingGraph,
+    params: &SampleParams,
     family: Option<&FamilyContext>,
     cancel: Guard<'_>,
 ) -> Result<Vec<SamplerResult>, Failure> {
     check_sample_size(graph.h.len(), graph.edges.len()).map_err(Failure::Rejected)?;
-    let model = admit(graph, family)?;
+    let Some(family) = routing_family(family) else {
+        return sample_generic_sa(graph, params, cancel).map_err(|_| Failure::Cancelled);
+    };
+    let model = admit_instance(graph, family.instance())?;
     reads(&model, graph, cancel)
 }
 
@@ -228,13 +226,13 @@ fn into_result(
 }
 
 impl Sampler for RoutingSampler {
-    /// A job without family metadata is not a routing job.
+    /// A job without family metadata is not a routing job, so it is annealed.
     fn sample(
         &self,
         graph: &IsingGraph,
-        _params: &SampleParams,
+        params: &SampleParams,
     ) -> Result<Vec<SamplerResult>, SampleError> {
-        into_result(job_reads(graph, None, None))
+        into_result(job_reads(graph, params, None, None))
     }
 
     fn accepts_family_metadata() -> bool {
@@ -244,11 +242,11 @@ impl Sampler for RoutingSampler {
     fn sample_family(
         &self,
         graph: &IsingGraph,
-        _params: &SampleParams,
+        params: &SampleParams,
         _warm: Option<&quip_solver_core::WarmStart>,
         family: &FamilyContext,
     ) -> Result<Vec<SamplerResult>, SampleError> {
-        into_result(job_reads(graph, Some(family), None))
+        into_result(job_reads(graph, params, Some(family), None))
     }
 
     fn declaration() -> Declaration {
@@ -287,12 +285,12 @@ impl Sampler for RoutingSampler {
             || self.stream_width(),
             |job: &WarmStreamJob, token: &CancelToken| {
                 let guard = Some((token, job.job.watermark));
-                job_reads(&job.job.graph, job.family.as_ref(), guard).map_err(|failure| {
-                    match failure {
+                job_reads(&job.job.graph, &job.job.params, job.family.as_ref(), guard).map_err(
+                    |failure| match failure {
                         Failure::Rejected(error) => StreamKernelError::Reject(error),
                         Failure::Cancelled => StreamKernelError::Cancelled,
-                    }
-                })
+                    },
+                )
             },
             jobs,
             out,

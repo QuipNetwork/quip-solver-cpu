@@ -35,12 +35,12 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-dimer` | weighted-dimer anneal with exact tile blocks and ice loops on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
-| `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job declined | experimental |
+| `quip-cpu-flow` | exact min-cost circulation on `quip/flow-static` jobs and compatible-charge construction on `quip/polariton-static` jobs, every other job annealed by the generic SA sampler | experimental |
 | `quip-cpu-tileworm` | tile worm anneal on supplied states of the selected `quip/charged-ice` and `quip/ice-fields` recipes, greedy descent on every other job, a postprocess | experimental |
 | `quip-cpu-gadget-repair` | gadget repair of supplied states of `quip/two-commodity-routing` jobs, greedy descent on every other job, a postprocess | experimental |
-| `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, declines every other job | experimental |
-| `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job declined | experimental |
-| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, declines every other job | experimental |
+| `quip-cpu-routing` | alternating exact flow responses on `quip/two-commodity-routing` jobs, every other job annealed by the generic SA sampler | experimental |
+| `quip-cpu-flow-loops` | charge-preserving loop search on `quip/flow-static` and `quip/polariton-static` jobs, from supplied states or the exact baseline, every other job annealed by the generic SA sampler | experimental |
+| `quip-cpu-dipolar` | string and loop search on `quip/defects-static` jobs, from supplied states when the job has them, every other job annealed by the generic SA sampler | experimental |
 
 The MSA miner uses color-ordered sweeps with 64 replicas per word. Its adaptive
 budget matches CUDA MSA: 7,392 to 29,568 sweeps and exactly 128 reads.
@@ -139,7 +139,7 @@ The accepted-rate and paired best-energy comparison that decide H3 run through
 the campaign analysis script rather than through this repository.
 
 The Quip solver contract (`quip-proto`, `quip-protocol`, `quip-solver-core`)
-comes from crates.io at version 0.0.14.
+comes from crates.io at version 0.0.15.
 
 Every binary except `quip-cpu-otsuka`, `quip-cpu-ice-sat`, `quip-cpu-greedy`, `quip-cpu-pairworm`, `quip-cpu-dimer`, `quip-cpu-flow`, `quip-cpu-tileworm`, `quip-cpu-gadget-repair`, `quip-cpu-routing`, `quip-cpu-flow-loops`, and `quip-cpu-dipolar` declares the generic family tier: no
 `solver_id` and no generated or accepted problem family, because none links a
@@ -363,11 +363,12 @@ sampler rescores it from the job graph. The solver checks the cancel token
 before it builds the network and before each augmentation. Each job logs the
 mode, the status, the cost, the energy, and the number of augmentations.
 
-The binary declines every job without a listed family with `NO_SOLUTION`. A
-plain model has no flow structure. A `quip/defects-static` job (D-static, with
-its dipolar energy) or a `quip/two-commodity-routing` job (occupancy) reaches
-the sampler as a plain model, so the binary declines it too. The binary does
-not approximate those energies.
+The binary solves every job without a listed family with the generic
+simulated-annealing sampler that `quip-cpu-sa` uses. A plain model has no flow
+structure. A `quip/defects-static` job (D-static, with its dipolar energy) or a
+`quip/two-commodity-routing` job (occupancy) reaches the sampler as a plain
+model, so the generic sampler anneals it. A flow job with infeasible labels is
+still declined with `NO_SOLUTION` and its cut.
 
 `tests/flow_baselines.rs` checks every side-2 and some side-3 F-static
 instances against exhaustive enumeration of the instance energy. It checks
@@ -480,9 +481,10 @@ QUIP_GADGET_PARITY=OUT cargo test --release --features experimental \
 
 `quip-cpu-routing` solves `quip/two-commodity-routing` revision 1. Its
 `solver_id` is `quip-cpu-routing/1` and its algorithm is `routing`. It accepts
-every valid parameter set of revision 1 and generates no family work. It has no
-fallback kernel. It declines a job with no family metadata, another family,
-another revision, or a routing section that does not decode.
+every valid parameter set of revision 1 and generates no family work. It
+declines a routing job whose routing section does not decode. A job with no
+family metadata, another family, or another revision is annealed by the
+generic sampler that `quip-cpu-sa` uses.
 
 `families::routing` ports the research solver `routesolve`. With one commodity
 fixed, the energy of the other is a minimum-cost circulation. The solver
@@ -576,8 +578,8 @@ a fixed-work run is reproducible.
 Every move keeps or lowers the squared label gaps. So a read that reaches a
 feasible state keeps every label from then on, and its later moves are loops
 or boundary strings only. The log counts short-cycle, worm, and repair moves
-apart. The binary declines every job without a listed family with
-`NO_SOLUTION`, as `quip-cpu-flow` does.
+apart. The binary anneals every job without a listed family with the generic
+sampler, as `quip-cpu-flow` does.
 
 `tests/flow_loops.rs` scores every state of side-2 instances of both families
 against the instance energy. It checks the change of each short cycle against
@@ -594,8 +596,8 @@ runs the family gate.
 `quip-cpu-dipolar/1`, its algorithm is `dipolar`, and its policy is
 `dipolar-strings/1`. It generates and accepts `quip/defects-static`
 revision 1, which allows the sides 2 and 3. The tests cover those two sides.
-The binary advertises `initial-spins`. It declines every other job with
-`NO_SOLUTION`, as `quip-cpu-flow` does, because a plain model and every
+The binary advertises `initial-spins`. It anneals every other job with the
+generic sampler, as `quip-cpu-flow` does, because a plain model and every
 unlisted family reach it with no D-static structure.
 
 `families::dipolar_search` is a new search. No research solver exists for this

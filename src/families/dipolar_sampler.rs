@@ -14,10 +14,10 @@
 //! physical claim, and every family job is then declined, because the table
 //! of revision 1 has the oracle calibration.
 //!
-//! Every other job is declined with `NO_SOLUTION`, as `quip-cpu-flow` and
-//! `quip-cpu-flow-loops` do. A plain model, and every family the binary does
-//! not list, reach the sampler with no D-static structure, and a fallback
-//! would serve another family's job without a sign in the result.
+//! Every other job is solved by the generic simulated-annealing sampler that
+//! `quip-cpu-sa` uses, as in `quip-cpu-flow` and `quip-cpu-flow-loops`. A plain
+//! model, and every family the binary does not list, reach the sampler with no
+//! D-static structure.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicUsize;
@@ -34,6 +34,7 @@ use quip_solver_core::{
 
 use super::dipolar_search::{DipolarError, Evidence, Problem, RunOutcome, Work};
 use crate::postprocess::sampler::{into_result, Failure};
+use crate::sampler_core::sample_generic_sa;
 use crate::{check_sample_size, run_job_pump, NumCpusError, StreamKernelError};
 
 /// The stable id of this binary (FAM-60).
@@ -143,12 +144,8 @@ fn is_defects(family: &FamilyContext) -> bool {
     family.family_id() == DEFECTS_V1.family_id && family.revision() == DEFECTS_V1.revision
 }
 
-/// The detail of a declined job without the D-static family.
-const NOT_A_DEFECTS_JOB: &str = "quip-cpu-dipolar solves only validated quip/defects-static@1 \
-     jobs; other families and plain models have no D-static structure";
-
 /// Run one job: the dipolar search for a D-static job. Every other job is
-/// declined.
+/// annealed by the generic sampler.
 fn job_reads(
     graph: &IsingGraph,
     params: &SampleParams,
@@ -167,15 +164,7 @@ fn job_reads(
             mode,
             cancel,
         ),
-        None => {
-            tracing::warn!(
-                detail = NOT_A_DEFECTS_JOB,
-                "quip-cpu-dipolar declines the job"
-            );
-            Err(Failure::Rejected(SampleError::Declined(
-                NOT_A_DEFECTS_JOB.to_owned(),
-            )))
-        }
+        None => sample_generic_sa(graph, params, cancel).map_err(|_| Failure::Cancelled),
     }
 }
 
@@ -463,7 +452,15 @@ mod tests {
         let table: FamilyTable = DipolarSampler::declaration()
             .validate()
             .expect("a valid declaration");
-        assert_eq!(table.generated().len(), 1);
+        // One declared generated revision. The solver-core default session
+        // path adds every other registered family to `generated()`.
+        assert_eq!(
+            quip_solver_core::ising_generators::registry::CONTRACTS
+                .iter()
+                .filter(|c| table.declares_generated(c.family_id, c.revision))
+                .count(),
+            1
+        );
         assert_eq!(table.accepted().len(), 1);
     }
 
@@ -541,16 +538,16 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_job_is_declined() {
+    fn a_plain_job_is_annealed() {
         let n = 8;
         let graph = IsingGraph::new(
             vec![0.0; n],
             vec![-1.0; n],
             (0..n).map(|i| (i, (i + 1) % n)).collect(),
         );
-        assert!(matches!(
-            DipolarSampler::new().sample(&graph, &params(3, 5)),
-            Err(SampleError::Declined(_))
-        ));
+        let got = DipolarSampler::new()
+            .sample(&graph, &params(3, 5))
+            .expect("a plain job is solved by the generic sampler");
+        assert_eq!(got.len(), 3);
     }
 }

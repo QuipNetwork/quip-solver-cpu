@@ -4,8 +4,8 @@
 //! generates and accepts `quip/flow-static` revision 1 and
 //! `quip/polariton-static` revision 1. It solves a F-static job with an exact
 //! min-cost circulation and an adapted-P job with a compatible-charge
-//! construction. It declines every other job, because a plain model has no
-//! flow structure.
+//! construction. Every other job is annealed by the generic sampler, because a
+//! plain model has no flow structure.
 
 use clap::Parser;
 use quip_solver_core::{run, CommonArgs};

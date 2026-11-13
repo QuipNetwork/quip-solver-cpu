@@ -2,7 +2,8 @@
 //!
 //! Build with `cargo build --release --features experimental`. The binary runs
 //! the original alternating routing attack on explicit
-//! `quip/two-commodity-routing` revision 1 jobs. It declines every other job.
+//! `quip/two-commodity-routing` revision 1 jobs. Every other job is annealed by the
+//! generic sampler.
 
 use clap::Parser;
 use quip_solver_core::{run, CommonArgs};

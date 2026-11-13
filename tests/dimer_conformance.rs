@@ -11,6 +11,7 @@ use quip_proto::v1::{Algorithm, Backend, RejectReason};
 use quip_solver_conformance::driver::drive_miner;
 use quip_solver_conformance::families::drive_miner_family;
 use quip_solver_conformance::solve::{drive_solve, CaseOutcome};
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use std::process::Command;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -27,6 +28,22 @@ fn command_line_capabilities() -> serde_json::Value {
     let out = Command::new(BIN).arg("--capabilities").output().unwrap();
     assert!(out.status.success(), "--capabilities failed");
     serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// The family ids a capability list must hold, in order. The binary accepts
+/// only its declared family. It generates that family first, then every other
+/// registered family through the solver-core default session path.
+fn expected_family_ids(list: &str) -> Vec<&'static str> {
+    let mut ids = vec![FAMILY];
+    if list == "generatedFamilies" {
+        ids.extend(
+            CONTRACTS
+                .iter()
+                .map(|c| c.family_id)
+                .filter(|id| *id != FAMILY),
+        );
+    }
+    ids
 }
 
 fn socket(name: &str) -> String {
@@ -48,8 +65,11 @@ fn the_command_line_declares_the_twisted_dimer_family() {
     assert_eq!(caps["solverId"], SOLVER_ID, "{caps}");
     for list in ["generatedFamilies", "acceptedFamilies"] {
         let entries = caps[list].as_array().expect("a family list");
-        assert_eq!(entries.len(), 1, "{list}: {caps}");
-        assert_eq!(entries[0]["familyId"], FAMILY, "{list}: {caps}");
+        let ids: Vec<&str> = entries
+            .iter()
+            .map(|e| e["familyId"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, expected_family_ids(list), "{list}: {caps}");
         assert_eq!(
             entries[0]["revisions"],
             serde_json::json!([1]),
@@ -89,10 +109,13 @@ async fn the_session_advertises_what_the_command_line_prints() {
         assert_eq!(session.backend(), Backend::Cpu, "{source}");
         assert_eq!(session.algorithm(), Algorithm::WeightedDimer, "{source}");
         assert_eq!(session.solver_id, SOLVER_ID, "{source}");
-        for families in [&session.generated_families, &session.accepted_families] {
-            assert_eq!(families.len(), 1, "{source}");
-            assert_eq!(families[0].family_id, FAMILY, "{source}");
-            assert_eq!(families[0].revisions, vec![1], "{source}");
+        for (list, families) in [
+            ("generatedFamilies", &session.generated_families),
+            ("acceptedFamilies", &session.accepted_families),
+        ] {
+            let ids: Vec<&str> = families.iter().map(|f| f.family_id.as_str()).collect();
+            assert_eq!(ids, expected_family_ids(list), "{source} {list}");
+            assert_eq!(families[0].revisions, vec![1], "{source} {list}");
         }
         assert_eq!(
             u64::from(session.max_nodes),

@@ -450,6 +450,17 @@ pub fn sample_ising(
     sample_ising_cancellable(graph, params, algorithm, None).unwrap_or_default()
 }
 
+/// The generic simulated-annealing path, the one `quip-cpu-sa` runs without a
+/// schedule override. The experimental specialist binaries use it for every
+/// job outside the families they declare.
+pub(crate) fn sample_generic_sa(
+    graph: &IsingGraph,
+    params: &SampleParams,
+    cancel: Option<(&CancelToken, Option<u64>)>,
+) -> Result<Vec<SamplerResult>, SampleCancelled> {
+    sample_ising_cancellable(graph, params, Algorithm::Sa, cancel)
+}
+
 /// Same kernel as [`sample_ising`], with optional cancel checkpoints.
 ///
 /// When `cancel` is `None`, the RNG stream and flip order match

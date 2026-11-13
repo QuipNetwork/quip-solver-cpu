@@ -15,6 +15,7 @@ use quip_protocol::scoring::energy_milli;
 use quip_solver_conformance::families::{export_instances, reference_revision};
 use quip_solver_core::ising_generators::family::BaseTopology;
 use quip_solver_core::ising_generators::instance::{Instance, InstanceParts};
+use quip_solver_core::ising_generators::registry::CONTRACTS;
 use quip_solver_core::ising_generators::routing::{routing_defects, ROUTING_V1};
 use quip_solver_core::ising_generators::Code;
 use quip_solver_core::{CancelToken, IsingGraph, SampleError, SampleParams, Sampler};
@@ -414,7 +415,7 @@ fn unknown_metadata_fails_admission() {
 }
 
 #[test]
-fn non_routing_jobs_fail_admission() {
+fn non_routing_jobs_are_annealed() {
     let n = 6;
     let ring = IsingGraph::new(
         vec![0.0; n],
@@ -422,10 +423,16 @@ fn non_routing_jobs_fail_admission() {
         (0..n).map(|i| (i, (i + 1) % n)).collect(),
     );
     let sampler = RoutingSampler::new();
-    assert!(matches!(
-        sampler.sample(&ring, &SampleParams::default()),
-        Err(SampleError::Declined(_))
-    ));
+    let params = SampleParams {
+        num_reads: 2,
+        num_sweeps: 16,
+        seed: 1,
+        ..Default::default()
+    };
+    let reads = sampler
+        .sample(&ring, &params)
+        .expect("the generic sampler solves a plain job");
+    assert_eq!(reads.len(), 2);
 }
 
 #[test]
@@ -433,7 +440,12 @@ fn the_declaration_claims_only_routing_revision_one() {
     let table = RoutingSampler::declaration()
         .validate()
         .expect("a valid declaration");
-    assert!(table.generated().is_empty());
+    // Nothing is declared as generated. Every registered family is generated
+    // on the solver-core default session path, in registry order.
+    assert!(CONTRACTS
+        .iter()
+        .all(|c| table.generated().iter().any(|g| g.family_id == c.family_id)));
+    assert!(!table.declares_generated(ROUTING_V1.family_id, ROUTING_V1.revision));
     assert_eq!(table.accepted().len(), 1);
     assert_eq!(table.accepted()[0].family_id, ROUTING_V1.family_id);
     assert_eq!(table.accepted()[0].revisions, vec![ROUTING_V1.revision]);
