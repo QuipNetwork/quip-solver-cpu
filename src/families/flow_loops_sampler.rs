@@ -470,9 +470,7 @@ mod tests {
             .expect("a valid declaration");
         assert_eq!(FAMILIES.len(), 2);
         for contract in [FLOW_V1, POLARITON_V1] {
-            assert!(table
-                .generated_contract(contract.family_id, contract.revision)
-                .is_some());
+            assert!(table.declares_generated(contract.family_id, contract.revision));
             assert!(table
                 .accepted_contract(contract.family_id, contract.revision)
                 .is_some());
@@ -481,9 +479,9 @@ mod tests {
             assert!(table
                 .accepted_contract(contract.family_id, contract.revision)
                 .is_none());
-            assert!(table
-                .generated_contract(contract.family_id, contract.revision)
-                .is_none());
+            // Generated on the solver-core default session path, but not
+            // declared, so its leases never reach this sampler's own path.
+            assert!(!table.declares_generated(contract.family_id, contract.revision));
         }
     }
 

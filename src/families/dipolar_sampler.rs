@@ -463,7 +463,15 @@ mod tests {
         let table: FamilyTable = DipolarSampler::declaration()
             .validate()
             .expect("a valid declaration");
-        assert_eq!(table.generated().len(), 1);
+        // One declared generated revision. The solver-core default session
+        // path adds every other registered family to `generated()`.
+        assert_eq!(
+            quip_solver_core::ising_generators::registry::CONTRACTS
+                .iter()
+                .filter(|c| table.declares_generated(c.family_id, c.revision))
+                .count(),
+            1
+        );
         assert_eq!(table.accepted().len(), 1);
     }
 
