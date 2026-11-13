@@ -16,6 +16,7 @@ pub mod families;
 pub mod flatiron;
 pub mod flatiron_sampler;
 pub mod gibbs_parallel;
+mod knee_sa;
 pub mod mps;
 pub mod mps_sampler;
 pub mod postprocess;
@@ -49,6 +50,7 @@ pub use families::routing_sampler::{
 pub use flatiron::{sample_ising_flatiron, FlatironConfig};
 pub use flatiron_sampler::{FlatironSampler, CPU_FLATIRON_IDENTITY};
 pub use gibbs_parallel::{ConfigError, GibbsConfig, GibbsParallelism};
+pub use knee_sa::{SaSchedule, SaScheduleConfig};
 pub use mps::{sample_ising_mps, InitMode, MpsConfig};
 pub use mps_sampler::{MpsSampler, CPU_MFA_IDENTITY, CPU_MPS_IDENTITY};
 pub use postprocess::gadget_repair_sampler::{
@@ -87,7 +89,7 @@ use quip_solver_core::{
 };
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Largest model the SA, MSA and research samplers take. Node ids stay below 2^31 (bit 31 of
 /// a `sa_int` neighbour id is the coupling sign) and directed edge slots below
@@ -417,8 +419,16 @@ fn parse_num_cpus(backend_toml: &str) -> Result<Option<usize>, NumCpusError> {
     }
     let cfg: CpuBackendConfig =
         toml::from_str(backend_toml).map_err(|_| NumCpusError::InvalidToml)?;
-    quip_solver_core::config::warn_unknown_fields("cpu", cfg.unknown.keys());
+    warn_cpu_unknown_fields(cfg.unknown.keys());
     check_num_cpus(cfg.num_cpus)
+}
+
+/// Schedule keys belong to cpu-sa and can accompany shared CPU configuration.
+pub(crate) fn warn_cpu_unknown_fields<'a>(keys: impl Iterator<Item = &'a String>) {
+    quip_solver_core::config::warn_unknown_fields(
+        "cpu",
+        keys.filter(|key| !knee_sa::CONFIG_KEYS.contains(&key.as_str())),
+    );
 }
 
 /// Validate a `num_cpus` value read from `backend_toml`.
@@ -450,6 +460,8 @@ pub(crate) fn store_num_cpus(cell: &AtomicUsize, requested: usize) {
 pub struct CpuSampler {
     algorithm: Algorithm,
     gibbs: GibbsConfig,
+    /// Present only when the SA binary opts into schedule configuration.
+    sa: Option<Arc<RwLock<SaScheduleConfig>>>,
     /// 0 means use host parallelism.
     num_cpus: Arc<AtomicUsize>,
 }
@@ -482,6 +494,7 @@ impl CpuSampler {
         Self {
             algorithm,
             gibbs: GibbsConfig::default(),
+            sa: None,
             num_cpus: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -493,6 +506,23 @@ impl CpuSampler {
     /// it at startup and exits with a configuration error instead.
     pub fn with_gibbs_config(self, gibbs: GibbsConfig) -> Self {
         Self { gibbs, ..self }
+    }
+
+    /// Enable cpu-sa schedule selection. Validate CLI settings before calling.
+    /// Other binaries keep their existing behavior by leaving this unset.
+    pub fn with_sa_config(self, config: SaScheduleConfig) -> Self {
+        Self {
+            sa: Some(Arc::new(RwLock::new(config))),
+            ..self
+        }
+    }
+
+    fn knee_config(&self) -> Option<SaScheduleConfig> {
+        if self.algorithm != Algorithm::Sa {
+            return None;
+        }
+        let config = self.sa.as_ref()?.read().unwrap_or_else(|e| e.into_inner());
+        (config.schedule == SaSchedule::Knee).then(|| config.clone())
     }
 
     fn core_budget(&self) -> usize {
@@ -547,6 +577,10 @@ impl Sampler for CpuSampler {
             return gibbs_parallel::sample_gibbs_with(graph, params, &self.gibbs)
                 .map_err(|_| SampleError::Capacity);
         }
+        if let Some(config) = self.knee_config() {
+            return Ok(knee_sa::sample(graph, params, &config, None)
+                .expect("sampling without a cancel token cannot be cancelled"));
+        }
         Ok(sample_ising(graph, params, self.algorithm))
     }
 
@@ -582,6 +616,13 @@ impl Sampler for CpuSampler {
     }
 
     fn apply_config(&self, backend_toml: &str) {
+        if let Some(sa) = &self.sa {
+            let mut config = sa.write().unwrap_or_else(|e| e.into_inner());
+            match config.resolve(backend_toml) {
+                Ok(resolved) => *config = resolved,
+                Err(error) => knee_sa::reject_config(&error),
+            }
+        }
         if let Err(e) = apply_num_cpus(&self.num_cpus, backend_toml) {
             tracing::error!(error = %e, "cpu num_cpus rejected");
             reject_num_cpus(e);
@@ -596,6 +637,7 @@ impl Sampler for CpuSampler {
     ) {
         let algorithm = self.algorithm;
         let gibbs = self.gibbs;
+        let knee = self.knee_config();
         run_stream_pump(
             || self.stream_width(),
             move |g, p, token, watermark| {
@@ -605,6 +647,9 @@ impl Sampler for CpuSampler {
                     // completion the coordinator would count as a served job.
                     gibbs_parallel::sample_gibbs_with(g, p, &gibbs)
                         .map_err(|_| StreamKernelError::Reject(SampleError::Capacity))
+                } else if let Some(config) = &knee {
+                    knee_sa::sample(g, p, config, Some((token, watermark)))
+                        .map_err(|_| StreamKernelError::Cancelled)
                 } else {
                     sampler_core::sample_ising_cancellable(
                         g,

@@ -1,0 +1,99 @@
+{
+  "status": "pass",
+  "pass": true,
+  "models_requested": 100,
+  "first_30": {
+    "models": 30,
+    "reached": 14,
+    "at_or_below": 24,
+    "median_wall_s": 1.553015872486867
+  },
+  "all": {
+    "models": 100,
+    "reached": 49,
+    "at_or_below": 79,
+    "median_wall_s": 1.5025034704012796
+  },
+  "criteria": {
+    "first_30_reached": {
+      "observed": 14,
+      "threshold": 14,
+      "comparison": ">=",
+      "pass": true
+    },
+    "first_30_at_or_below": {
+      "observed": 24,
+      "threshold": 24,
+      "comparison": ">=",
+      "pass": true
+    },
+    "all_reached": {
+      "observed": 49,
+      "threshold": 49,
+      "comparison": ">=",
+      "pass": true
+    },
+    "all_at_or_below": {
+      "observed": 79,
+      "threshold": 79,
+      "comparison": ">=",
+      "pass": true
+    },
+    "median_wall_s": {
+      "observed": 1.5025034704012796,
+      "threshold": 3.793,
+      "comparison": "<=",
+      "pass": true
+    },
+    "reported_energy_matches": {
+      "pass": true
+    },
+    "archived_knee_args": {
+      "pass": true
+    }
+  },
+  "archive_results_baseline": {
+    "models": 100,
+    "reached": 49,
+    "at_or_below": 79
+  },
+  "archive_summary_snapshot": {
+    "models": 30,
+    "reached": 14,
+    "at_or_below": 24
+  },
+  "archive_median_wall_s": 1.8965688087046146,
+  "wall_limit_s": 3.793,
+  "command": [
+    "target/release/quip-cpu-sa",
+    "--solve",
+    "--schedule",
+    "knee",
+    "--knee-b0",
+    "0.1",
+    "--knee-bk",
+    "0.4",
+    "--knee-b1",
+    "2.5",
+    "--knee-at",
+    "0.1",
+    "--knee-unit-milli",
+    "62"
+  ],
+  "binary_sha256": "d5fbb2a3a1a05f56ebd78bfbf84b34e1ed84795949de7fdeac32a2870064aa71",
+  "archive": "/home/carback1/quip-data/regimes/new-pow/ice-charge/measurements/depth-2s-100",
+  "targets": "/home/carback1/quip-data/regimes/new-pow/targets-pp-100.json",
+  "archive_results_sha256": "576eca1e69e982d3a24287793be231d4751aa8674f5e0680502f87aa1f546dfa",
+  "num_reads": 1,
+  "num_sweeps": 72155,
+  "seed": 1,
+  "jobs": 8,
+  "thread_env": {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "RAYON_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "1"
+  }
+}

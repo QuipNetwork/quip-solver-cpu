@@ -84,3 +84,32 @@ fn invalid_log_level_rejected_at_parse_time() {
         );
     }
 }
+
+#[test]
+fn knee_cli_rejects_invalid_settings_with_config_exit_code() {
+    let bin = env!("CARGO_BIN_EXE_quip-cpu-sa");
+    let unknown_schedule = Command::new(bin)
+        .args(["--check", "--schedule", "unknown"])
+        .output()
+        .unwrap();
+    assert_eq!(unknown_schedule.status.code(), Some(2));
+
+    for (flag, value) in [
+        ("--knee-b0", "0"),
+        ("--knee-bk", "-1"),
+        ("--knee-b1", "NaN"),
+        ("--knee-at", "1"),
+        ("--knee-unit-milli", "0"),
+    ] {
+        let out = Command::new(bin)
+            .args(["--check", flag, value])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(64),
+            "{flag}={value}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

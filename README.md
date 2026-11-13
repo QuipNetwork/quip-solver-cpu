@@ -648,6 +648,45 @@ moves and routes, both work modes, and a golden output for a fixed seed.
 quip-cpu-sa --quip-coordinator unix:///run/quip/coord.sock
 ```
 
+### Knee schedule for `quip-cpu-sa`
+
+Use `--schedule knee` to select the glasssa grain annealer and its knee schedule.
+The default, `--schedule default`, keeps the existing SA path.
+The knee schedule has two geometric segments and ends with greedy descent.
+Each sweep visits every site in index order. Each read has an independent seed.
+
+| Command-line flag | `backend_toml` key | Default |
+|----------|-------------------|---------|
+| `--schedule` | `schedule` | `"default"` |
+| `--knee-b0` | `knee_b0` | `0.5` |
+| `--knee-bk` | `knee_bk` | `1.5` |
+| `--knee-b1` | `knee_b1` | `6.0` |
+| `--knee-at` | `knee_at` | `0.1` |
+| `--knee-unit-milli` | `knee_unit_milli` | `1000.0` |
+
+The coordinator can pin these top-level `backend_toml` keys. Configuration values override command-line values.
+Betas and the unit must be finite and positive. The knee fraction must be greater than zero and less than one.
+Invalid settings cause exit 64 at handshake.
+The beta values divide by `knee_unit_milli` to give inverse milli-energy units.
+The schedule uses the requested sweep count directly, with one beta per sweep.
+
+The archived RP-2 rung uses one read and 72,155 sweeps with these settings:
+
+```toml
+schedule = "knee"
+knee_b0 = 0.1
+knee_bk = 0.4
+knee_b1 = 2.5
+knee_at = 0.1
+knee_unit_milli = 62
+```
+
+Use these command-line flags: `--schedule knee --knee-b0 0.1 --knee-bk 0.4 --knee-b1 2.5 --knee-at 0.1 --knee-unit-milli 62`.
+Set the read and sweep counts through the coordinator or benchmark policy.
+Knee reads run sequentially in read-index order on the calling thread.
+Graphs outside the checked integer range use the existing f64 annealer with the knee beta ladder.
+This fallback keeps the existing sweep order and omits the final greedy descent.
+
 ### `num_cpus`
 
 The coordinator `[cpu]` section may set `num_cpus`. That key travels in
