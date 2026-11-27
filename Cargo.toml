@@ -118,6 +118,11 @@ path = "src/bin/quip_cpu_otsuka.rs"
 required-features = ["experimental"]
 
 [[bin]]
+name = "quip-cpu-native"
+path = "src/bin/quip_cpu_native.rs"
+required-features = ["experimental"]
+
+[[bin]]
 name = "quip-cpu-ice-sat"
 path = "src/bin/quip_cpu_ice_sat.rs"
 required-features = ["experimental"]
@@ -168,13 +173,35 @@ name = "quip-cpu-dipolar"
 path = "src/bin/quip_cpu_dipolar.rs"
 required-features = ["experimental"]
 
+[[example]]
+name = "cpu_native_bench"
+required-features = ["experimental"]
+
 # The experimental backends stay behind this feature, so a plain `cargo build`
 # produces only the four production binaries. CI builds, tests and lints with
 # --all-features, and a tag publishes every binary, with the release notes
-# naming the experimental ones. The feature is empty because the modules
-# compile unconditionally and only the [[bin]] targets are gated.
+# naming the experimental ones. The feature gates the experimental binaries
+# and the native sampler module.
 [features]
 experimental = []
+# Group residual edges by one endpoint during component-delta initialization.
+row-grouped-residual-deltas = []
+# Mask out interior edges in the row-grouped scan.
+masked-residual-deltas = ["row-grouped-residual-deltas"]
+# Classify the four gauged spin signs through a small table.
+table-tile-bonds = []
+# Fast union-find lookups for roots and their direct children.
+shallow-union-roots = []
+# Build component membership during labeling using reverse node lists.
+linked-component-lists = []
+# Update full and residual local fields through one packed integer addition.
+packed-residual-fields = ["row-grouped-residual-deltas"]
+# Reoptimize connected induced trees against their fixed boundary spins.
+tree-polish = ["experimental"]
+# Reoptimize a spine and its perpendicular neighbors by variable elimination.
+zephyr-spine-polish = ["experimental"]
+# Find collective ice moves by alternating disjoint pair flips and tile repairs.
+pair-worm-polish = ["experimental"]
 # Off by default. Adds per-spin-decision and per-flip spans INSIDE the hot loop.
 # These spans distort absolute timing (millions of enters per read), so they are
 # used only for the diagnostic cross-check pass, never for headline per-part JSON.
@@ -227,6 +254,7 @@ tracing-flame = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+blake3 = "1"
 proptest = "1.11.0"
 quip-solver-conformance = "0.0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync", "process"] }

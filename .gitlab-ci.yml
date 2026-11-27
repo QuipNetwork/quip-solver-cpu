@@ -9,10 +9,10 @@ variables:
   CARGO_HOME: $CI_PROJECT_DIR/.cargo
   # Downloadable binaries live in the generic package registry under this name.
   PKG: quip-solver-cpu
-  # 17 binary targets on three platforms. The build jobs read the target list
+  # 29 binary targets on three platforms. The build jobs read the target list
   # out of the manifest, so this number is the one place a new binary has to be
   # acknowledged by hand. Publishing a binary stays a deliberate decision.
-  ASSET_COUNT: "84"
+  ASSET_COUNT: "87"
   # The toolchain image the Linux jobs run on, by digest. The
   # build-toolchain-image job prints this line after a rebuild.
   TOOLCHAIN_IMAGE: registry.gitlab.com/quip.network/quip-solver-cpu/ci-toolchain@sha256:89c11fed33ad62550a49b1aefd779010b0f5834493e35afafb32b09587b94fc4
@@ -235,8 +235,8 @@ test-py:
 # when it tried to run the file.
 #
 # `--features experimental` builds the experimental binaries alongside the
-# production ones. The feature is empty and no code reads it, so the production
-# binaries keep the same instructions; only their build metadata hash changes.
+# production ones. Production binaries use the same solver paths in either
+# configuration.
 # The build names the feature instead of passing `--all-features`, which would
 # also turn on `fine-spans` and put per-spin spans in every released hot loop.
 build-linux-amd64:

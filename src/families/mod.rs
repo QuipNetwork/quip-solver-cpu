@@ -11,6 +11,8 @@ pub mod flow_loops_sampler;
 pub mod flow_sampler;
 pub mod ice_sat;
 pub mod ice_sat_sampler;
+#[cfg(feature = "experimental")]
+pub mod native;
 pub mod otsuka;
 pub mod otsuka_sampler;
 pub mod routing;

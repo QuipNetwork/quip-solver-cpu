@@ -750,7 +750,8 @@ mod tests {
     /// Every identity states its limits, and lists `linear-schedule` exactly
     /// when its kernel anneals a beta ladder. The Simulated Bifurcation
     /// kernels, the greedy descent, the exact flow baselines, and the flow
-    /// loop search have no ladder. The three lists together cover every binary.
+    /// loop search have no ladder. The three lists cover the distinct solver
+    /// identities. The native binary shares Otsuka's identity.
     #[test]
     fn every_identity_states_its_schedule_feature_and_limits() {
         let ladder = [
@@ -806,12 +807,15 @@ mod tests {
             .chain(&descent)
             .map(|id| id.algorithm)
             .collect();
-        // The bench is a profiling tool, not a solver, so it has no identity.
+        // The profiling tool has no solver identity. The native binary
+        // shares the Otsuka identity covered above.
         let bins = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin"))
             .expect("src/bin")
             .filter(|e| {
-                e.as_ref()
-                    .map_or(true, |e| e.file_name() != "quip_cpu_bench.rs")
+                e.as_ref().map_or(true, |e| {
+                    let name = e.file_name();
+                    name != "quip_cpu_bench.rs" && name != "quip_cpu_native.rs"
+                })
             })
             .count();
         assert_eq!(algorithms.len(), ladder.len() + sb.len() + descent.len());
