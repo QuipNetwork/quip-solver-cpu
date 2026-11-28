@@ -1,0 +1,13 @@
+{
+  "chosen": "pairs",
+  "pilot_seeds": [
+    2111,
+    2118
+  ],
+  "confirmation_seeds": [
+    2501,
+    2520
+  ],
+  "rounds": 2,
+  "binary_sha256": "e39d8bdedf5911c61792bd5f0aa0f65a48f0df97ee4c678b59e5f6debac80dc9"
+}

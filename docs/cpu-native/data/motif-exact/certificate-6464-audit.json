@@ -1,0 +1,11 @@
+{
+  "snapshot_sha256": "d55776d8c7ed26fa633cf2937b92e775005b1e8fc28c8e24db7d4c9d2410fd1a",
+  "free_original_spins": 746,
+  "unpinned_components": 291,
+  "direct_elimination_width": 7,
+  "dominance_fixed_excluding_anchor": 157,
+  "milp_active_components": 134,
+  "milp_nodes": 1,
+  "optimum_delta_milli": 0,
+  "milp_bound_milli": 0.0
+}

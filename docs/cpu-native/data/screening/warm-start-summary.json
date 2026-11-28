@@ -1,0 +1,51 @@
+{
+  "seeds": [
+    2301,
+    2302,
+    2303,
+    2304,
+    2305,
+    2306,
+    2307,
+    2308,
+    2309,
+    2310,
+    2311,
+    2312
+  ],
+  "sweeps": 2048,
+  "replicas": 16,
+  "wins_ties_losses": [
+    7,
+    0,
+    5
+  ],
+  "median_best_gain_milli": 530.0,
+  "best_gain_ci95_milli": [
+    -4405.0,
+    3910.0
+  ],
+  "best_gain_min_max_milli": [
+    -7190,
+    16210
+  ],
+  "best_gains_milli": [
+    5750,
+    2070,
+    -4120,
+    16210,
+    870,
+    -7040,
+    -7190,
+    1990,
+    9380,
+    190,
+    -4690,
+    -3650
+  ],
+  "median_batch_gain_milli": 2322.5,
+  "warm_counts": [
+    2
+  ],
+  "binary_sha256": "5ce75cf279c48dc62212e8abcf93ba423b736b863032649cbf33f11386cd852f"
+}

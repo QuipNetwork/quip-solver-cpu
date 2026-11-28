@@ -1,0 +1,38 @@
+{
+  "development": [
+    2301,
+    2324
+  ],
+  "holdout": [
+    2325,
+    2404
+  ],
+  "chosen_geometry": "rank4_weak3.relaxed_milli",
+  "chosen_structure": "structure.frustrated_weak_triangles",
+  "blend_geometry_scale": [
+    -5090397.651603357,
+    2209.3884725412354
+  ],
+  "blend_short_scale": [
+    -4896910.0,
+    5855.0
+  ],
+  "development_pair_concordance": {
+    "rank2.relaxed_milli": 0.6485507246376812,
+    "rank2.descended_best_milli": 0.4384057971014493,
+    "rank4.relaxed_milli": 0.5760869565217391,
+    "rank4.descended_best_milli": 0.5144927536231884,
+    "rank4_weak3.relaxed_milli": 0.7210144927536232,
+    "rank4_weak3.descended_best_milli": 0.605072463768116,
+    "structure.weak_abs_field_score": 0.5688405797101449,
+    "structure.frustrated_weak_triangles": 0.5996376811594203,
+    "probe4x64.best_milli": 0.41304347826086957,
+    "probe4x256.best_milli": 0.4891304347826087
+  },
+  "primary_contrast": "chosen_geometry minus short_probe on holdout top-decile AUROC",
+  "ranking_target_milli": -5090000,
+  "selection_budget": {
+    "nonce_pool": 10,
+    "full_solves": 3
+  }
+}

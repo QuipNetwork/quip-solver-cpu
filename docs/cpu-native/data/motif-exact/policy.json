@@ -1,0 +1,15 @@
+{
+  "primary": "exact",
+  "structural_secondary": "exact-light",
+  "comparison": "cut",
+  "rounds": 64,
+  "development": [
+    2701,
+    2712
+  ],
+  "confirmation": [
+    6461,
+    6476
+  ],
+  "binary_sha256": "1923ec5c5b1722bf1194a20b5d53ddc3ff2be79b1e3fe6fb7b2a8e9d53b0278b"
+}

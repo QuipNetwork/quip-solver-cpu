@@ -1,0 +1,54 @@
+{
+  "phase": "timing",
+  "seeds": [
+    2501,
+    2520
+  ],
+  "binary_sha256": "e39d8bdedf5911c61792bd5f0aa0f65a48f0df97ee4c678b59e5f6debac80dc9",
+  "arms": {
+    "pairs": {
+      "wins_ties_losses": [
+        2,
+        18,
+        0
+      ],
+      "median_gain_milli": 0.0,
+      "median_gain_ci95_milli": [
+        0.0,
+        0.0
+      ],
+      "max_gain_milli": 110,
+      "gains_milli": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        110,
+        0,
+        0,
+        90,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "regions_solved": 244,
+      "regions_attempted": 330,
+      "largest_solved_region": 172,
+      "max_width": 9,
+      "median_stage_milliseconds": 8.783060499999998,
+      "min_max_pair_stage_milliseconds": [
+        6.322396,
+        12.885012000000001
+      ]
+    }
+  }
+}

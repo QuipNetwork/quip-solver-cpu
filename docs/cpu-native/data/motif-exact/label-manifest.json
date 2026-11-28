@@ -1,0 +1,36 @@
+{
+  "binary_sha256": "4488a2066c937effa7ab56f88a05e42a0f050b55315148d2a66fd11a0f35ee36",
+  "options": [
+    "--mode",
+    "pipeline",
+    "--preset",
+    "archive",
+    "--reads",
+    "16",
+    "--sweeps",
+    "8192",
+    "--pair-worm-polish",
+    "--spine-blocks",
+    "200",
+    "--spine-span",
+    "4",
+    "--spine-batch",
+    "--spine-cache-plans",
+    "--spine-skip-unchanged",
+    "--motif-rounds",
+    "32",
+    "--motif-mixtures",
+    "4"
+  ],
+  "first": 6461,
+  "count": 16,
+  "cpus": [
+    2,
+    3,
+    4
+  ],
+  "checkpoint_range": [
+    6461,
+    6476
+  ]
+}

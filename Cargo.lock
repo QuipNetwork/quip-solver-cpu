@@ -891,6 +891,7 @@ dependencies = [
 name = "quip-solver-cpu"
 version = "0.3.6"
 dependencies = [
+ "blake3",
  "clap",
  "crossbeam-channel",
  "proptest",

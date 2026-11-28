@@ -31,6 +31,7 @@ reads are sequential and cache-local. Energies are scored with the canonical
 | `quip-cpu-mfa` | mean-field annealing (the same kernel at bond dimension 1) | experimental |
 | `quip-cpu-flatiron` | belief-propagation tensor network on the problem graph | experimental |
 | `quip-cpu-otsuka` | Otsuka cluster annealing on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
+| `quip-cpu-native` | population annealing with a canonical-energy archive and optional conditional polishing on `quip/twisted-ice-dimer` revision 1 | [experimental](docs/cpu-native/README.md) |
 | `quip-cpu-ice-sat` | Strong-layer SAT witnesses from an external Kissat on `quip/twisted-ice-dimer` jobs, simulated annealing on every other job | experimental |
 | `quip-cpu-greedy` | exact greedy descent from supplied initial states, a postprocess | experimental |
 | `quip-cpu-pairworm` | pair-aware worm schedule on supplied states of the selected `quip/twisted-ice-dimer` recipes, greedy descent on every other job, a postprocess | experimental |

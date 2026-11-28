@@ -374,14 +374,31 @@ impl PairWorm {
         opts: &WormOptions,
         seed: u64,
     ) -> Result<u64, DescentError> {
+        self.descend_cancellable(ising, s, opts, seed, &|| false)
+    }
+
+    pub(crate) fn descend_cancellable(
+        &self,
+        ising: &Ising,
+        s: &mut [i8],
+        opts: &WormOptions,
+        seed: u64,
+        stopped: &impl Fn() -> bool,
+    ) -> Result<u64, DescentError> {
         check(ising, s)?;
         let mut w = Walk::new(self, ising, s, opts, seed);
         let mut accepted = 0;
         let mut budget = opts.zero_budget;
         let mut order = self.tiled.clone();
         for _ in 0..opts.max_sweeps {
+            if stopped() {
+                return Err(DescentError::Cancelled);
+            }
             let mut improved = false;
             for t in 0..self.tiles.len() {
+                if t.is_multiple_of(128) && stopped() {
+                    return Err(DescentError::Cancelled);
+                }
                 let q = self.charge(w.s, t);
                 if q == 0 {
                     continue;
@@ -406,7 +423,10 @@ impl PairWorm {
                     }
                 }
             }
-            for &(u, v) in &self.pairs {
+            for (i, &(u, v)) in self.pairs.iter().enumerate() {
+                if i.is_multiple_of(128) && stopped() {
+                    return Err(DescentError::Cancelled);
+                }
                 if w.s[u as usize] == w.s[v as usize] {
                     continue;
                 }
@@ -422,7 +442,10 @@ impl PairWorm {
                     let k = (w.draw() % (i as u64 + 1)) as usize;
                     order.swap(i, k);
                 }
-                for &u in &order {
+                for (i, &u) in order.iter().enumerate() {
+                    if i.is_multiple_of(128) && stopped() {
+                        return Err(DescentError::Cancelled);
+                    }
                     if w.try_move(u, opts.random_depth, opts.prune, &mut budget, &mut improved) {
                         accepted += 1;
                     }

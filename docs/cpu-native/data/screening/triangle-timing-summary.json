@@ -1,0 +1,24 @@
+{
+  "verified_nonces": 204,
+  "timed_pairs": 26,
+  "repeats_per_arm": 2,
+  "cpu": 4,
+  "reference_stage_ms_median": 15.56572675,
+  "fast_stage_ms_median": 2.13466425,
+  "paired_speedup_median": 7.275150223985417,
+  "paired_speedup_ci95": [
+    7.222216927462409,
+    7.312562173314245
+  ],
+  "paired_speedup_min_max": [
+    6.414759183693691,
+    8.054653623208784
+  ],
+  "paired_faster_count": 26,
+  "reference_setup_ms": 28.575723,
+  "fast_setup_ms": 29.041787,
+  "shared_triangle_setup_ms": 19.036082,
+  "potential_triangles": 33729,
+  "source_commit": "e130011cd970128607e5931afd9c11560f396d57",
+  "binary_sha256": "e1af133bc42a080e7f2f71d70ac6775f5e7f2787af0990e1922923c013fbba9d"
+}

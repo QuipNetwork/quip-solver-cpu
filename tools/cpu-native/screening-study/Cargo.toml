@@ -1,0 +1,16 @@
+[package]
+name = "quip-cpu-screening-study"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+geometry = []
+
+[dependencies]
+ising-generators = "=0.0.15"
+rand = { version = "=0.8.7", features = ["small_rng"] }
+
+[[bin]]
+name = "quip-cpu-screening-study"
+path = "check.rs"

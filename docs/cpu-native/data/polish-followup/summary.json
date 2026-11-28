@@ -1,0 +1,266 @@
+{
+  "hardware": "AMD EPYC 7663 VPS",
+  "rust": "1.97.1",
+  "build": [
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--features",
+    "experimental,masked-residual-deltas,table-tile-bonds,linked-component-lists,shallow-union-roots,packed-residual-fields,pair-worm-polish,zephyr-spine-polish,tree-polish,motif-descent",
+    "--example",
+    "cpu_native_bench"
+  ],
+  "anneal": {
+    "reads": 16,
+    "sweeps": 8192,
+    "preset": "archive",
+    "pair_worm_polish": true
+  },
+  "studies": {
+    "c59-fixed-inputs": {
+      "pairs": 16,
+      "full_independent_timing": false,
+      "wins_ties_losses": [
+        6,
+        10,
+        0
+      ],
+      "best_gain_median_milli": 0.0,
+      "best_gain_min_max_milli": [
+        0,
+        2090
+      ],
+      "median_candidate_gain_median_milli": 0.0,
+      "stage_speedup_median": 1.8205255635110205,
+      "stage_speedup_ci95": [
+        1.787548006517143,
+        2.0183553570321453
+      ],
+      "stage_speedup_faster": 16,
+      "timed_region_speedup_median": 1.8205139959501038,
+      "timed_region_speedup_ci95": [
+        1.7913634695375933,
+        2.0183392784522627
+      ],
+      "binary_sha256": "553f652a230faeeb7d594b79ac52815ee2c3dfdfa42b4ff5b7784a3c8d874a42",
+      "best_gain_vs_bare_50": [
+        0,
+        2090,
+        90,
+        0,
+        0,
+        0,
+        380,
+        0,
+        0,
+        90,
+        0,
+        90,
+        0,
+        470,
+        0,
+        0
+      ],
+      "bare_50_gain_vs_200": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "source_commit": "c0b00593f21e1e166383d1540635a18e92b6a6f5",
+      "seeds": [
+        2151,
+        2152,
+        2153,
+        2154,
+        2155,
+        2156,
+        2157,
+        2158,
+        2159,
+        2160,
+        2161,
+        2162,
+        2163,
+        2164,
+        2165,
+        2166
+      ],
+      "rank_better_tied_worse": [
+        20,
+        232,
+        4
+      ],
+      "rank_gain_range_milli": [
+        -20,
+        2090
+      ],
+      "median_stage_seconds_per_arm": [
+        0.913051889,
+        0.49922261
+      ]
+    },
+    "c59-full-solve": {
+      "pairs": 12,
+      "full_independent_timing": true,
+      "wins_ties_losses": [
+        4,
+        8,
+        0
+      ],
+      "best_gain_median_milli": 0.0,
+      "best_gain_min_max_milli": [
+        0,
+        830
+      ],
+      "median_candidate_gain_median_milli": 0.0,
+      "stage_speedup_median": 1.8456464370506662,
+      "stage_speedup_ci95": [
+        1.6034705923609762,
+        2.0834011178300136
+      ],
+      "stage_speedup_faster": 12,
+      "timed_region_speedup_median": 1.0280813482071274,
+      "timed_region_speedup_ci95": [
+        0.9995707897101506,
+        1.0626943090375822
+      ],
+      "binary_sha256": "553f652a230faeeb7d594b79ac52815ee2c3dfdfa42b4ff5b7784a3c8d874a42",
+      "source_commit": "c0b00593f21e1e166383d1540635a18e92b6a6f5",
+      "seeds": [
+        2191,
+        2192,
+        2193,
+        2194,
+        2195,
+        2196,
+        2197,
+        2198,
+        2199,
+        2200,
+        2201,
+        2202
+      ],
+      "rank_better_tied_worse": [
+        34,
+        158,
+        0
+      ],
+      "rank_gain_range_milli": [
+        0,
+        830
+      ],
+      "median_stage_seconds_per_arm": [
+        0.9636324067500001,
+        0.5133562305
+      ],
+      "median_pipeline_seconds_per_arm": [
+        29.19329545925,
+        28.808963754249998
+      ]
+    },
+    "c60-reuse": {
+      "pairs": 16,
+      "identical_reuse_outputs": 16,
+      "reuse_stage_speedup": {
+        "median": 1.9832718514799585,
+        "ci95": [
+          1.7298399595838339,
+          2.2993509627822863
+        ],
+        "min_max": [
+          1.312587500156971,
+          3.214804234274937
+        ],
+        "faster_pairs": 16
+      },
+      "reuse_motif_stage_speedup": {
+        "median": 1.3048931663556078,
+        "ci95": [
+          1.1119892290257531,
+          1.4929020937397468
+        ],
+        "min_max": [
+          0.9931053942450493,
+          2.472647562047633
+        ],
+        "faster_pairs": 15
+      },
+      "reuse_motif_vs_short_motif": {
+        "median": 0.6952799929230247,
+        "ci95": [
+          0.6294119161098106,
+          0.7333073798678391
+        ],
+        "min_max": [
+          0.4664406266506441,
+          1.4600344866908195
+        ],
+        "faster_pairs": 1
+      },
+      "median_stage_seconds": {
+        "reference": 0.9768242427499999,
+        "reuse": 0.4734741635,
+        "reuse_motif": 0.7380503165000001,
+        "short_motif": 0.49903927625
+      },
+      "skipped_batches_median_of_400": 222.0,
+      "reuse_motif_best_wins_ties_losses": [
+        6,
+        10,
+        0
+      ],
+      "reuse_motif_best_gain_range_milli": [
+        0,
+        2090
+      ],
+      "binary_sha256": "f7259352ce34ed2e926f5486769c706b741cf6e600b303b824e3af231199bb2a",
+      "source_commit": "2baaf7449eb51d14a147a70f7b2b8142f01e2ad7",
+      "seeds": [
+        2151,
+        2152,
+        2153,
+        2154,
+        2155,
+        2156,
+        2157,
+        2158,
+        2159,
+        2160,
+        2161,
+        2162,
+        2163,
+        2164,
+        2165,
+        2166
+      ]
+    }
+  },
+  "retained_code_validation": {
+    "warm_spine_byte_equal_sets": 16,
+    "partial_batches_byte_equal_sets": 4,
+    "random_starts_byte_equal_sets": 4,
+    "retained_recipe_replays": 32,
+    "retained_binary_sha256": "4488a2066c937effa7ab56f88a05e42a0f050b55315148d2a66fd11a0f35ee36",
+    "source_commit": "cf98ed424db0b1f623521cc3cd743dacc591c9b3",
+    "release_library_tests": {
+      "passed": 468,
+      "failed": 0,
+      "ignored": 1
+    },
+    "native_protocol_passes": 2
+  }
+}

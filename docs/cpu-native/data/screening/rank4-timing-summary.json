@@ -1,0 +1,23 @@
+{
+  "verified_bit_identical_scores": 204,
+  "timed_pairs": 26,
+  "repeats_per_arm": 2,
+  "cpu": 4,
+  "reference_stage_ms_median": 21.76820575,
+  "fast_stage_ms_median": 8.640546,
+  "paired_speedup_median": 2.5165227076276775,
+  "paired_speedup_ci95": [
+    2.5032141963165473,
+    2.530850869844192
+  ],
+  "paired_speedup_min_max": [
+    2.486456981726414,
+    2.570714949405623
+  ],
+  "paired_faster_count": 26,
+  "reference_setup_ms": 11.313225,
+  "fast_setup_ms": 17.669932,
+  "source_commit": "e130011cd970128607e5931afd9c11560f396d57",
+  "frozen_ranker_commit": "98297fdab672a0feef658f989e2285cdc747b172",
+  "binary_sha256": "0d1a8aac125e1a8ff60945fadbbd10f27f10d024ceed7a4f7e06d2c36793a102"
+}
