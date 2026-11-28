@@ -755,6 +755,9 @@ use several cores. `initial_spins` starts reads from given states, and
 
 ## Benchmarking
 
+The Aglais CPU experiment records the −5094.135 result, saved candidates,
+and pinned replay commands. [Aglais CPU evidence](docs/cpu-native/aglais-5094/README.md)
+
 `quip-cpu-bench` runs a model through the sampler under a `tracing` subscriber
 and writes per-part timing plus a flame graph. The report assigns the
 sampler's time to each annealing seam, not only to the whole-model total.

@@ -1,0 +1,11 @@
+{
+  "best_energy_milli": -5094135,
+  "edges": 41205,
+  "energies_milli": [
+    -5094135
+  ],
+  "instance_digest": "5419a70a781c034b3f171c00fcf6acf97c12ff6e258c6e64144c471ae093cb04",
+  "nonce": "dfbc9c59a8401206b5c1470635e8af79a814856bd5c463148da7cf7b95aa1bd8",
+  "spins": 4560,
+  "encoded_witness_sha256": "c53a1a268cf1288f4e7b5df292e1cfd17d3281b4a55109ece49c2bc0c6e1f988"
+}
