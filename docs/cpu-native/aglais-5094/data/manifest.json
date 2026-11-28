@@ -1,0 +1,114 @@
+{
+  "units": "integer milli-units",
+  "threshold_milli": -5091000,
+  "headline": {
+    "cold_id": "target-131072-reroll-175503",
+    "polish_arm": "exact-light"
+  },
+  "runtime": {
+    "cpu_model": "AMD EPYC 7663",
+    "rust": "1.97.1",
+    "features": "experimental,masked-residual-deltas,table-tile-bonds,linked-component-lists,shallow-union-roots,packed-residual-fields,pair-worm-polish,zephyr-spine-polish,tree-polish,motif-descent"
+  },
+  "chain": {
+    "network": "Aglais",
+    "rpc": "https://bootnode-2.aglais.quip.network:20049/rpc",
+    "finalized_height": 215115,
+    "finalized_head": "0x11c4f51bab2838e7aeaf10c50c1c091c8883b46d9a04f85795bd06d5312f333c",
+    "runtime_version": 121,
+    "topology": {
+      "family": "quip/twisted-ice-dimer",
+      "revision": 1,
+      "params_hex": "010100020000000c00020001000000040300020000002d0004000400000046050000",
+      "topology": "2d130ce6df0fceacff26b90a06811829707bde8227d45e04ef71c804a8a5345c",
+      "nodes": 4560,
+      "edges": 41205,
+      "registered_at": 12904,
+      "topology_meta_sha256": "769898d13dfca2eb5d19107f0257d7f9b319a3e22b44a27cbcf7965c3084492a"
+    },
+    "cases": {
+      "175503": {
+        "block": 175503,
+        "block_hash": "0xeab9ba9c600656fb574add7bf4507141903388f5567d5a5d6f991a150288cd48",
+        "nonce": "dfbc9c59a8401206b5c1470635e8af79a814856bd5c463148da7cf7b95aa1bd8",
+        "energy_milli": -5096825,
+        "cohort": "development",
+        "witness_count": 1,
+        "extrinsic_index": 1,
+        "extrinsic_call": "0a04",
+        "witness_sha256": "b0b56ef837586b19c4dc25a301d253c12d913c596d1ba8b93de772733ccb01e9",
+        "checked_on_second_rpc": false
+      },
+      "186335": {
+        "block": 186335,
+        "block_hash": "0x904a256f97e55e9b056cd658a4342092afce3d30b04db01c78f8e0c2c2d1d874",
+        "nonce": "b41a18be2b72204c21975cd1169c4aab61a9f2ff3bc52d9b68a28306a7ffd8b3",
+        "energy_milli": -5093675,
+        "cohort": "confirmation",
+        "witness_count": 1,
+        "extrinsic_index": 5,
+        "extrinsic_call": "0a04",
+        "witness_sha256": "91aadd1c6be8733c76885e050bba2a7eb9dc826eb2562937776983ff81dc9cd2",
+        "checked_on_second_rpc": false
+      },
+      "206095": {
+        "block": 206095,
+        "block_hash": "0xb32e36d4f43b9ec769902f4a90bdad2ed47f43fb8e542293f128454c0657dac9",
+        "nonce": "18fe1fa3cf2a720d1e50c17b49883a5cf9f62ec3ce8a629166fb4690f64975ee",
+        "energy_milli": -5096575,
+        "cohort": "development",
+        "witness_count": 1,
+        "extrinsic_index": 5,
+        "extrinsic_call": "0a04",
+        "witness_sha256": "0dfc3d815d3109de5c9b439f93312911fd28b8c3a05c982daa99bc80228466e6",
+        "checked_on_second_rpc": false
+      }
+    }
+  },
+  "sources": {
+    "cold": {
+      "commit": "925e8d290975ab7df54de6b2f6e91179cb6dfc27",
+      "ref": "cpu-aglais-5094-cold",
+      "measured_binary_sha256": "d71b5a0f772b1ad839ff9a042637f8bccf8ee70c1836f8bef92252bd71fc885d"
+    },
+    "polish": {
+      "commit": "8bc0042812042dbdbb5bda7c0d231bdb90024c0f",
+      "ref": "cpu-aglais-5094-polish",
+      "measured_binary_sha256": "026bdb864690ffea861359b0a59c61eaca89d4e290e09ac7666bfc2f43c6c6e9"
+    },
+    "probe": {
+      "commit": "8136968ce564e31b7cbb8b40097b024ecaa66ec0",
+      "ref": "cpu-aglais-5094-probe",
+      "measured_binary_sha256": "1c9fcb9d8fcbd452bdf8a8d09592dd6edd831a935460410fe622a1a21f612a9d"
+    }
+  },
+  "archive_members": {
+    "cold/long-restarts-175503.json": "a7cdc489dd34686ffafa00418e78deb3bf9965cc655e3dc67683654762c92f3d",
+    "cold/long-restarts-206095.json": "3360d166af4065361be49516c917055f3f3b8be2e93678fda6596106f486df83",
+    "cold/target-131072-175503.json": "c3e801da31a9616e3d330a053980ea21bb650037271d9acfd56a3e5ad637c157",
+    "cold/target-131072-reroll-175503.json": "8920ed02efa848d146740612d27cbdcdd8bed57bf9f3bd635feda690e744645d",
+    "cold/target-262144-175503.json": "c330ffa2020df163028f1ce548074698913ef8121674e27441ee53bf1657ff8a",
+    "cold/target-beta16-175503.json": "347ffef5f6b48920bd11d2e6e6bdb984053475984976b5fe0977af21fa8560db",
+    "cold/target-canonical-probe-175503.json": "c3e801da31a9616e3d330a053980ea21bb650037271d9acfd56a3e5ad637c157",
+    "cold/target-confirmation-131072-186335.json": "de667ce50e394a73df9e43926d0ece32f08ee903ed6f3d7888f983c2d5114705",
+    "cold/target-weak125-175503.json": "615f6bfa1de2aa9f29ecc223ae847c70cfd28cd35352a9a210e9f1f5108f870d",
+    "instances/175503.json": "666accd4b6a1fc95b94626e47c3918d260675e63e3d954b8eb62c0ee98baa3a1",
+    "instances/186335.json": "6faf1de73ca5e366feac18b71d83a8f7c1dd9813b0c6ee631a725255bffed528",
+    "instances/206095.json": "188abf54e3c5452c49b98c14b47f19a780bf59f267e27ff317f322aba5654062",
+    "polish/175503-exact-light.json": "31a1d87acc735f7a84d376ba7f7bbfd1848457cadcd535447982546579a8a859",
+    "polish/175503-exact.json": "8920ed02efa848d146740612d27cbdcdd8bed57bf9f3bd635feda690e744645d",
+    "polish/175503-reference.json": "8920ed02efa848d146740612d27cbdcdd8bed57bf9f3bd635feda690e744645d"
+  },
+  "files_sha256": {
+    "chain-witness-175503.json": "b0b56ef837586b19c4dc25a301d253c12d913c596d1ba8b93de772733ccb01e9",
+    "chain-witness-186335.json": "91aadd1c6be8733c76885e050bba2a7eb9dc826eb2562937776983ff81dc9cd2",
+    "chain-witness-206095.json": "0dfc3d815d3109de5c9b439f93312911fd28b8c3a05c982daa99bc80228466e6",
+    "cold-runs.jsonl": "759bfb51900132cad2e44af9c92ace4092a63285b78936fa53d9cab052091275",
+    "cold-witness-rescore.json": "95e1539ae1df1bca21aac18e17d1a72e042cf31b1013065872638e7e454be399",
+    "cold-witness.json": "b77ce7640808f090d3051e9ca7afe22f9e577db4397fcb6cf30e09f2a31d76cb",
+    "polish-runs.json": "7955135aa0d7711e0ee3cee0e58771b01c5023f6f78da699eacf7603579c0179",
+    "polished-witness-rescore.json": "53b03fcd0b50727d5f9671629b5085e6c22071a085954cb1825709d55fdf61c2",
+    "polished-witness.json": "c53a1a268cf1288f4e7b5df292e1cfd17d3281b4a55109ece49c2bc0c6e1f988",
+    "replay-inputs.tar.gz": "c38ca6d56af1f94160e4722abfd6f7a12d9d539b5fc156a420ab844dca9eadab"
+  }
+}
